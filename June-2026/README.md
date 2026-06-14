@@ -27,10 +27,13 @@ want to build it yourself, jump to [Build from source](#build-from-source).
 
 ## What you receive
 
+**Download:** [**Releases → latest**](https://github.com/KevinB88/Intracellular-Transport-Computational-Modeling/releases/latest)
+(current: [**v2.2**](https://github.com/KevinB88/Intracellular-Transport-Computational-Modeling/releases/tag/v2.2)).
+
 | Platform | File you get | What it is |
 |----------|--------------|------------|
-| **macOS** | `Bedoya-Kogan.dmg` (~116 MB) | A disk image. Open it and drag the app to Applications. |
-| **Windows** | `Project2025App` folder (zipped) | A folder containing `Project2025App.exe` and its support files. |
+| **macOS** | [`Bedoya-Kogan.dmg`](https://github.com/KevinB88/Intracellular-Transport-Computational-Modeling/releases/latest) (~116 MB) | A disk image. Open it and drag the app to Applications. |
+| **Windows** | `Project2025App` folder (zipped) | A folder containing `Project2025App.exe` and its support files. **Not yet attached to a release** — [build from source](#build-from-source) with `build_windows.bat`. |
 
 > The application is **not code-signed / notarized**. This is normal for
 > in-house research software, but it means the operating system will show a
@@ -58,8 +61,10 @@ Numba, matplotlib, and Qt).
 
 ## Install on macOS
 
-1. **Open the disk image.** Double-click **`Bedoya-Kogan.dmg`**. A window opens
-   showing the app icon next to an **Applications** shortcut.
+1. **Download & open the disk image.** Get **`Bedoya-Kogan.dmg`** from the
+   [latest release](https://github.com/KevinB88/Intracellular-Transport-Computational-Modeling/releases/latest)
+   and double-click it. A window opens showing the app icon next to an
+   **Applications** shortcut.
 2. **Install.** Drag **`Bedoya-Kogan.app`** onto the **Applications** shortcut in
    that same window.
 3. **Eject the disk image.** In Finder, click the ⏏ eject button next to
