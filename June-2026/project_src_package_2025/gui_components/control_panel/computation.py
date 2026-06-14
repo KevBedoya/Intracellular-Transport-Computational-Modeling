@@ -148,17 +148,8 @@ class ComputationMixin:
                 f"Launching computation: {computation_name}...      [{self.produce_timestamp()}]"
             )
 
-            python_exec = sys.executable
-
-            args = [
-                python_exec,
-                "-m",
-                "multiprocessing_tools.subprocess_launcher",
-                computation_name,
-                json.dumps(inputs)
-            ]
-
             from project_src_package_2025.multiprocessing_tools import subprocess_launcher
+            args = subprocess_launcher.build_worker_args(computation_name, json.dumps(inputs))
             self.process = subprocess_launcher.launch_subprocess(args)
 
             self.poll_timer = QTimer()

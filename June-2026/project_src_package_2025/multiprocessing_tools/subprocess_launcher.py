@@ -1,6 +1,31 @@
 import os
+import sys
 import subprocess
 from pathlib import Path
+
+
+def build_worker_args(computation_name, inputs_json):
+    """Return the argv that launches a single computation in a child process.
+
+    The invocation differs between source and frozen (PyInstaller) runs:
+
+    * **Source**: ``sys.executable`` is a real Python interpreter, so we run
+      this module as ``python -m multiprocessing_tools.subprocess_launcher``.
+    * **Frozen**: ``sys.executable`` is the bundled app binary, which does not
+      understand ``-m``. The binary instead re-dispatches to worker mode via
+      the ``--worker`` sentinel handled in ``main.py``.
+
+    ``inputs_json`` must already be a JSON string (the parameter dict).
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--worker", computation_name, inputs_json]
+    return [
+        sys.executable,
+        "-m",
+        "multiprocessing_tools.subprocess_launcher",
+        computation_name,
+        inputs_json,
+    ]
 
 
 def launch_subprocess(args):

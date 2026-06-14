@@ -41,6 +41,8 @@ pip-delete-this-directory.txt
 #  Usually contains files for bundled app
 *.manifest
 *.spec
+# Keep the project's PyInstaller spec under version control (build entry point).
+!Project2025App.spec
 
 # Unit test / coverage reports
 htmlcov/
