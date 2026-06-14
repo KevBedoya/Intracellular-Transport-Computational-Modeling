@@ -1,0 +1,13 @@
+6-11-2026
+
+Determining variable separability.
+
+Shifting trajectories and scaling.
+
+f(theta) = A + B * g(theta)
+
+Let's assume the following affine transformation.
+
+Why does the previous test suggest that trajectories are proportional?
+(Using the cosine similarity metric)
+

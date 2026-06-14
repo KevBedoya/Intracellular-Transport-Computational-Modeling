@@ -1,0 +1,17 @@
+Using May 2025 mixed codebase
+
+36x36 domain
+v = -10
+w = 10 ^ 3
+microtubule-positions = [0, 9, 18, 27]
+
+(index positions in the microtubule container)
+(0 begins at theta=0)
+
+T = 1 (simulation time)
+
+
+
+
+
+

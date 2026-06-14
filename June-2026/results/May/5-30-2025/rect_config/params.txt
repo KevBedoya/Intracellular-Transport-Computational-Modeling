@@ -1,0 +1,17 @@
+
+Parameters for mass analysis under the rectangular configuration (rect_config)
+
+Domain: 36x36
+v = -10
+w = 10^3
+Microtubule configuration: [0, 9, 18, 27]
+
+# simulation time
+T = 1.0
+
+d_tube = 0.02181661564992912
+# this corresponds to the maximum d_tube value before overlap takes place with respect to the provided microtubule configuration
+
+# Note, MFPT was computed with respect to the time used to collect the resulting mass analysis results
+# In this case, it was computed for T = 1.0
+Resulting MFPT: 0.30057385110704515

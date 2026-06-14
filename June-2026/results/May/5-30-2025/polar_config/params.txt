@@ -1,0 +1,14 @@
+
+Parameters for mass analysis under the polar configuration (polar_config)
+
+Domain: 36x36
+v = -10
+w = 10^3
+Microtubule configuration: [0, 9, 18, 27]
+
+# simulation time
+T = 1.0
+
+# Note, MFPT was computed with respect to the time used to collect the resulting mass analysis results
+# In this case, it was computed for T = 1.0
+Resulting MFPT: 0.2965961272931763
