@@ -12,7 +12,8 @@ def super_comp_type_I(rg_param, ry_param, switch_param_a, switch_param_b, T_para
                       PvR_DL_snapshots, RvR_AL_snapshots, R_fixed_angle,
                       MFPT_snapshots,
                       d_tube=0, D=1.0, domain_radius=1.0,
-                      mass_checkpoint=10**6):
+                      mass_checkpoint=10**6,
+                      center_init_cond=True, m_init=0, n_init=0):
 
     """
     Super computation routine type I
@@ -72,7 +73,11 @@ def super_comp_type_I(rg_param, ry_param, switch_param_a, switch_param_b, T_para
     dl_mass = 1
     al_mass = 0
     MFPT = 0
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
 
     # initialize collection width values
     # relative_k = np.floor(K / MA_collection_factor)

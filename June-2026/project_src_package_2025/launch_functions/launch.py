@@ -1,14 +1,37 @@
-from . import mfpt_comp, sup, ant, np, num, super
+from . import mfpt_comp, sup, ant, np, num, super, os, pd, datetime, fp
 
 from computational_tools import struct_init
 from data_processing import data_process_functions as pro
+import matplotlib.pyplot as plt
+
+
+# (****) Validate an off-center initial-condition patch (m, n) (****)
+def _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param):
+    """
+    Validate the discrete off-center initial-condition coordinates.
+
+    Only enforced when center_init_cond is False (i.e. the user requested an
+    off-center initial condition). The seeded ring m_init is limited to
+    [0, rg_param-1] and the seeded ray n_init to [0, ry_param-1]. When
+    center_init_cond is True the default centered scheme is used and no
+    coordinates are required.
+    """
+    if center_init_cond:
+        return
+    if m_init < 0 or m_init > rg_param - 1:
+        raise IndexError(
+            f'Off-center initial condition ring m_init: {m_init} falls outside of the legal ring range [0, {rg_param - 1}].')
+    if n_init < 0 or n_init > ry_param - 1:
+        raise IndexError(
+            f'Off-center initial condition ray n_init: {n_init} falls outside of the legal ray range [0, {ry_param - 1}].')
 
 
 # v======================================== Mass dependent computations ========================================v
 
 
 # (****) (****)
-def solve_mfpt_mass_(rg_param, ry_param, N_LIST, v_param, w_param, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, mass_retention_threshold=0.01, d_tube=0.0):
+def solve_mfpt_mass_(rg_param, ry_param, N_LIST, v_param, w_param, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, mass_retention_threshold=0.01, d_tube=0.0,
+                     center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -26,8 +49,11 @@ def solve_mfpt_mass_(rg_param, ry_param, N_LIST, v_param, w_param, domain_radius
     if d_tube < 0 or d_tube > d_tube_max:
         raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
-    MFPT, sim_time = mfpt_comp.comp_mfpt_by_mass_loss(rg_param, ry_param, w_param, w_param, v_param, N_LIST, D_LAYER, A_LAYER, mass_checkpoint, domain_radius, D, mass_retention_threshold, d_tube)
+    MFPT, sim_time = mfpt_comp.comp_mfpt_by_mass_loss(rg_param, ry_param, w_param, w_param, v_param, N_LIST, D_LAYER, A_LAYER, mass_checkpoint, domain_radius, D, mass_retention_threshold, d_tube,
+                                                      center_init_cond, m_init, n_init)
     print("\n\n")
     return MFPT, sim_time
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -36,7 +62,8 @@ def solve_mfpt_mass_(rg_param, ry_param, N_LIST, v_param, w_param, domain_radius
 # (****) (****)
 def collect_MFPT_snapshots_mass_dep(rg_param, ry_param, N_LIST, v_param, w_param,
                                     checkpoint_collect_container, mass_retention_threshold=0.01, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
-                                    d_tube=0.0, save_png=True, show_plt=False):
+                                    d_tube=0.0, save_png=True, show_plt=False,
+                                    center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -59,12 +86,15 @@ def collect_MFPT_snapshots_mass_dep(rg_param, ry_param, N_LIST, v_param, w_param
     if d_tube < 0 or d_tube > d_tube_max:
         raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
     MFPT_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
 
     mfpt_comp.comp_mfpt_by_time_points_mass_dep(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
                                                 D_LAYER, A_LAYER, checkpoint_collect_container, MFPT_snapshots,
-                                                mass_retention_threshold, mass_checkpoint, domain_radius, D, d_tube)
+                                                mass_retention_threshold, mass_checkpoint, domain_radius, D, d_tube,
+                                                center_init_cond, m_init, n_init)
     print("\n\n")
     return pro.process_MFPT_results(MFPT_snapshots, checkpoint_collect_container, 1, rg_param, ry_param, w_param, v_param, N_LIST,
                                     save_png, show_plt)
@@ -74,7 +104,8 @@ def collect_MFPT_snapshots_mass_dep(rg_param, ry_param, N_LIST, v_param, w_param
 # (****) (****)
 def collect_phi_ang_dep_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, checkpoint_collect_container,
                                  mass_retention_threshold=0.01, T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0,
-                                 mass_checkpoint=10**6, save_png=True, show_plt=False):
+                                 mass_checkpoint=10**6, save_png=True, show_plt=False,
+                                 center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -104,11 +135,14 @@ def collect_phi_ang_dep_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, c
 
     PvT_DL_snapshots = np.zeros((collection_stamp_enum, ry_param), dtype=np.float64)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
     ant.comp_diffusive_angle_snapshots_mass_dep(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
                                                 D_LAYER, A_LAYER, PvT_DL_snapshots, checkpoint_collect_container,
-                                                mass_retention_threshold, T_fixed_ring_seg, d_tube, domain_radius, D, mass_checkpoint)
+                                                mass_retention_threshold, T_fixed_ring_seg, d_tube, domain_radius, D, mass_checkpoint,
+                                                center_init_cond, m_init, n_init)
     print("\n\n")
     return pro.process_PvT_DL(PvT_DL_snapshots, v_param, w_param, N_LIST, T_fixed_ring_seg, save_png, show_plt,
                               checkpoint_collect_container, 1, ry_param, rg_param)
@@ -117,7 +151,8 @@ def collect_phi_ang_dep_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, c
 
 #
 def compute_ang_traj_mat(rg_param, ry_param, v_param, w_param, N_LIST, checkpoint_collect_container,
-                         mass_retention_threshold=0.01, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, save_png=True, show_plt=False):
+                         mass_retention_threshold=0.01, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, save_png=True, show_plt=False,
+                         center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -149,8 +184,11 @@ def compute_ang_traj_mat(rg_param, ry_param, v_param, w_param, N_LIST, checkpoin
 
     T_param = checkpoint_collect_container[-1] + 0.001
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, w_param, w_param, T_param, v_param, N_LIST,
-                                                       D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube, domain_radius, D, mass_checkpoint)
+                                                       D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube, domain_radius, D, mass_checkpoint,
+                                                       center_init_cond, m_init, n_init)
 
     return diffusion_matrix, central_vector
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -160,7 +198,8 @@ def compute_ang_traj_mat(rg_param, ry_param, v_param, w_param, N_LIST, checkpoin
 # (****) (****)
 def collect_density_rad_depend_mass_dep(rg_param, ry_param, v_param, w_param,  N_LIST, checkpoint_collect_container,
                                         R_fixed_angle=-1, domain_radius=1.0, D=1.0, d_tube=0.0,
-                                        mass_retention_threshold=0.01, mass_checkpoint=10**6, save_png=True, show_plt=False):
+                                        mass_retention_threshold=0.01, mass_checkpoint=10**6, save_png=True, show_plt=False,
+                                        center_init_cond=True, m_init=0, n_init=0):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -192,11 +231,14 @@ def collect_density_rad_depend_mass_dep(rg_param, ry_param, v_param, w_param,  N
     PvR_DL_snapshots = np.zeros((collection_stamp_enum, rg_param + 1), dtype=np.float64)
     RvR_AL_snapshots = np.zeros((collection_stamp_enum, rg_param), dtype=np.float64)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
     ant.comp_diffusive_rad_snapshots_mass_dep(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
                                               D_LAYER, A_LAYER, R_fixed_angle, PvR_DL_snapshots, RvR_AL_snapshots,
-                                              checkpoint_collect_container, mass_retention_threshold, domain_radius, D, mass_checkpoint, d_tube)
+                                              checkpoint_collect_container, mass_retention_threshold, domain_radius, D, mass_checkpoint, d_tube,
+                                              center_init_cond, m_init, n_init)
 
     print("\n\n")
     output_list = pro.process_DvR_results(PvR_DL_snapshots, RvR_AL_snapshots, v_param, w_param, N_LIST, rg_param,
@@ -210,7 +252,8 @@ def collect_density_rad_depend_mass_dep(rg_param, ry_param, v_param, w_param,  N
 # (****) (****)
 def heatmap_production_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, checkpoint_collect_container,
                                 mass_retention_threshold=0.01, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, d_tube=0.0,
-                                heatplot_border=False, heatplot_colorscheme='viridis', save_png=True, show_plt=True, display_extraction=True):
+                                heatplot_border=False, heatplot_colorscheme='viridis', save_png=True, show_plt=True, display_extraction=True,
+                                center_init_cond=True, m_init=0, n_init=0):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -244,9 +287,12 @@ def heatmap_production_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, ch
     HM_C_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
     MFPT_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_diffusive_snapshots_mass_dep(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
                                           D_LAYER, A_LAYER, HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots, checkpoint_collect_container,
-                                          domain_radius, D, mass_retention_threshold, mass_checkpoint, d_tube)
+                                          domain_radius, D, mass_retention_threshold, mass_checkpoint, d_tube,
+                                          center_init_cond, m_init, n_init)
 
     print("\n\n")
     return pro.process_static_HM_results(HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots, checkpoint_collect_container, heatplot_border, w_param, v_param,
@@ -260,7 +306,8 @@ def heatmap_production_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, ch
 
 
 def collect_Jrr_mass_sum_over_time(rg_param, ry_param, v_param, w_param, T_param, N_LIST, collection_factor=5, domain_radius=1.0, D=1.0,
-                                   mass_checkpoint=10 ** 6, d_tube=0.0, collection_factor_limit=10 ** 3, save_png=True, show_plt=False):
+                                   mass_checkpoint=10 ** 6, d_tube=0.0, collection_factor_limit=10 ** 3, save_png=True, show_plt=False,
+                                   center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -284,19 +331,23 @@ def collect_Jrr_mass_sum_over_time(rg_param, ry_param, v_param, w_param, T_param
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     relative_k = int(np.floor(K / collection_factor))
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
     Jrr_sum_timeseries = np.zeros([relative_k], dtype=np.float64)
     ant.comp_peak_time_mass_loss(rg_param, ry_param, w_param, w_param, T_param, v_param,
                                  Jrr_sum_timeseries, N_LIST, D_LAYER, A_LAYER, relative_k,
-                                 collection_factor, d_tube, domain_radius, D, mass_checkpoint)
+                                 collection_factor, d_tube, domain_radius, D, mass_checkpoint,
+                                 center_init_cond, m_init, n_init)
 
     return pro.process_Jrr_sum_results(Jrr_sum_timeseries, v_param, w_param, N_LIST, rg_param, ry_param, save_png, show_plt, collection_factor, domain_radius, D)
 
 
 def collect_BC_param_dependence(rg_param, ry_param, v_param, T_param, N_LIST, w_LIST,
                                  checkpoint, T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0,
-                                 mass_checkpoint=10**6, save_png=True, show_plt=False):
+                                 mass_checkpoint=10**6, save_png=True, show_plt=False,
+                                 center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -336,6 +387,8 @@ def collect_BC_param_dependence(rg_param, ry_param, v_param, T_param, N_LIST, w_
     delta_theta = num.compute_dThe(ry_param)
     fixed_ring_seg = int(np.floor(rg_param * T_fixed_ring_seg))
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     for i in range(w_LIST_length):
         D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
         w_param = w_LIST[i]
@@ -344,7 +397,8 @@ def collect_BC_param_dependence(rg_param, ry_param, v_param, T_param, N_LIST, w_
         # a_param = w_param
         BC_ratio_snapshot, mass_retained = ant.comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, a_param, b_param, T_param, v_param, N_LIST, D_LAYER,
                                                                                       A_LAYER, checkpoint, T_fixed_ring_seg=T_fixed_ring_seg, d_tube=d_tube, domain_radius=domain_radius,
-                                                                                      D=D, mass_checkpoint=mass_checkpoint)
+                                                                                      D=D, mass_checkpoint=mass_checkpoint,
+                                                                                      center_init_cond=center_init_cond, m_init=m_init, n_init=n_init)
         # RHS, LHS, mass_retained = ant.comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, w_param, w_param, T_param, v_param, N_LIST, D_LAYER, A_LAYER, PvT_DL_snapshots, i, checkpoint)
         data_dict['BC_ratios'].append(BC_ratio_snapshot)
         # data_dict['RHS'].append(RHS)
@@ -398,7 +452,8 @@ def collect_BC_param_dependence_grid_size(v_param, T_param, w_param, N_amount,
 
 
 # (****) (****)
-def solve_mfpt_time_(rg_param, ry_param, N_LIST, v_param, w_param, T_param, domain_radius=1.0, D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0):
+def solve_mfpt_time_(rg_param, ry_param, N_LIST, v_param, w_param, T_param, domain_radius=1.0, D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
+                     center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -416,9 +471,12 @@ def solve_mfpt_time_(rg_param, ry_param, N_LIST, v_param, w_param, T_param, doma
     if d_tube < 0 or d_tube > d_tube_max:
         raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
     MFPT = mfpt_comp.comp_mfpt_by_time(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
-                                       D_LAYER, A_LAYER, T_param, mass_checkpoint, domain_radius, D, d_tube)
+                                       D_LAYER, A_LAYER, T_param, mass_checkpoint, domain_radius, D, d_tube,
+                                       center_init_cond, m_init, n_init)
     print("\n\n")
     return MFPT
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -426,7 +484,8 @@ def solve_mfpt_time_(rg_param, ry_param, N_LIST, v_param, w_param, T_param, doma
 
 # (****) (****)
 def collect_MFPT_snapshots_time_dep(rg_param, ry_param, N_LIST, v_param, w_param, T_param, checkpoint_collect_container, domain_radius=1.0, D=1.0,
-                                    mass_checkpoint=10 ** 6, d_tube=0.0, save_png=True, show_plt=False):
+                                    mass_checkpoint=10 ** 6, d_tube=0.0, save_png=True, show_plt=False,
+                                    center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -457,12 +516,15 @@ def collect_MFPT_snapshots_time_dep(rg_param, ry_param, N_LIST, v_param, w_param
 
     T_param = float(T_param)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
     MFPT_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
 
     mfpt_comp.comp_mfpt_by_time_points_time_dep(rg_param, ry_param, w_param, w_param, v_param, N_LIST,
                                                 D_LAYER, A_LAYER, checkpoint_collect_container, MFPT_snapshots,
-                                                T_param, mass_checkpoint, domain_radius, D, d_tube)
+                                                T_param, mass_checkpoint, domain_radius, D, d_tube,
+                                                center_init_cond, m_init, n_init)
     print("\n\n")
 
     return pro.process_MFPT_results(MFPT_snapshots, checkpoint_collect_container, 2, rg_param, ry_param, w_param, v_param, N_LIST,
@@ -472,7 +534,8 @@ def collect_MFPT_snapshots_time_dep(rg_param, ry_param, N_LIST, v_param, w_param
 # (****) (****)
 def collect_phi_ang_dep_time_dep(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
                                  checkpoint_collect_container, T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0,
-                                 mass_checkpoint=10**6, save_png=True, show_plt=False):
+                                 mass_checkpoint=10**6, save_png=True, show_plt=False,
+                                 center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -510,9 +573,12 @@ def collect_phi_ang_dep_time_dep(rg_param, ry_param, v_param, w_param, T_param, 
 
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, w_param, w_param, T_param, v_param, N_LIST,
                                                 D_LAYER, A_LAYER, PvT_DL_snapshots,
-                                                checkpoint_collect_container, T_fixed_ring_seg, d_tube, domain_radius, D, mass_checkpoint)
+                                                checkpoint_collect_container, T_fixed_ring_seg, d_tube, domain_radius, D, mass_checkpoint,
+                                                center_init_cond, m_init, n_init)
     print("\n\n")
 
     return pro.process_PvT_DL(PvT_DL_snapshots, v_param, w_param, N_LIST, T_fixed_ring_seg, save_png, show_plt,
@@ -522,7 +588,8 @@ def collect_phi_ang_dep_time_dep(rg_param, ry_param, v_param, w_param, T_param, 
 # (****) (****)
 def collect_density_rad_depend_time_dep(rg_param, ry_param, v_param, w_param, T_param, N_LIST, checkpoint_collect_container,
                                         R_fixed_angle=-1, domain_radius=1.0, D=1.0, d_tube=0.0,
-                                        mass_checkpoint=10**6, save_png=True, show_plt=False):
+                                        mass_checkpoint=10**6, save_png=True, show_plt=False,
+                                        center_init_cond=True, m_init=0, n_init=0):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -562,9 +629,12 @@ def collect_density_rad_depend_time_dep(rg_param, ry_param, v_param, w_param, T_
 
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, w_param, w_param, v_param, T_param, N_LIST,
                                               D_LAYER, A_LAYER, R_fixed_angle, PvR_DL_snapshots, RvR_AL_snapshots,
-                                              checkpoint_collect_container, domain_radius, D, mass_checkpoint, d_tube)
+                                              checkpoint_collect_container, domain_radius, D, mass_checkpoint, d_tube,
+                                              center_init_cond, m_init, n_init)
     print("\n\n")
 
     output_list = pro.process_DvR_results(PvR_DL_snapshots, RvR_AL_snapshots, v_param, w_param, N_LIST, rg_param,
@@ -577,7 +647,8 @@ def collect_density_rad_depend_time_dep(rg_param, ry_param, v_param, w_param, T_
 # (****) (****)
 def heatmap_production_time_dep(rg_param, ry_param, v_param, w_param, N_LIST, T_param, checkpoint_collect_container,
                                 domain_radius=1.0, D=1.0, mass_checkpoint=10**6, d_tube=0.0,
-                                heatplot_border=False, heatplot_colorscheme='viridis', save_png=True, show_plt=True, display_extraction=True):
+                                heatplot_border=False, heatplot_colorscheme='viridis', save_png=True, show_plt=True, display_extraction=True,
+                                center_init_cond=True, m_init=0, n_init=0):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -617,9 +688,12 @@ def heatmap_production_time_dep(rg_param, ry_param, v_param, w_param, N_LIST, T_
     HM_C_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
     MFPT_snapshots = np.zeros([checkpoint_enum], dtype=np.float64)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_diffusive_snapshots_time_dep(rg_param, ry_param, w_param, w_param, v_param, T_param, N_LIST,
                                           D_LAYER, A_LAYER, HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots,
-                                          checkpoint_collect_container, domain_radius, D, mass_checkpoint, d_tube)
+                                          checkpoint_collect_container, domain_radius, D, mass_checkpoint, d_tube,
+                                          center_init_cond, m_init, n_init)
     print("\n\n")
 
     return pro.process_static_HM_results(HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots, checkpoint_collect_container, heatplot_border, w_param, v_param,
@@ -631,7 +705,8 @@ def launch_super_comp_I(rg_param, ry_param, v_param, w_param, T_param, N_LIST, d
                         MA_collection_factor=5, MA_collection_factor_limit=10 ** 3,
                         D=1.0, domain_radius=1.0, mass_checkpoint=10 ** 6, T_fixed_ring_seg=0.5, R_fixed_angle=-1,
                         save_png=True, show_plt=False, heat_plot_border=False, heatplot_colorscheme='viridis',
-                        display_extraction=True):
+                        display_extraction=True,
+                        center_init_cond=True, m_init=0, n_init=0):
     if len(N_LIST) > ry_param:
         raise IndexError(
             f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
@@ -707,6 +782,8 @@ def launch_super_comp_I(rg_param, ry_param, v_param, w_param, T_param, N_LIST, d
     HM_C_snapshots = np.zeros([Timestamp_enum], dtype=np.float64)
     MFPT_snapshots = np.zeros([Timestamp_enum], dtype=np.float64)
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     # Initialize layers
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
@@ -717,7 +794,8 @@ def launch_super_comp_I(rg_param, ry_param, v_param, w_param, T_param, N_LIST, d
                             MA_AL_timeseries,
                             MA_ALoI_timeseries, MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor, relative_k,
                             PvR_DL_snapshots,
-                            RvR_AL_snapshots, R_fixed_angle, MFPT_snapshots, d_tube, D, domain_radius, mass_checkpoint)
+                            RvR_AL_snapshots, R_fixed_angle, MFPT_snapshots, d_tube, D, domain_radius, mass_checkpoint,
+                            center_init_cond, m_init, n_init)
 
     # Process results: Produce CSVs, PNGs (plots and heatmaps) (log results to filepath_log<timestamp>.txt)
     # Parameter chart (relative to the computation) is also included in the result
@@ -762,7 +840,8 @@ def launch_super_comp_I(rg_param, ry_param, v_param, w_param, T_param, N_LIST, d
 
 # (****) (****)
 def output_time_until_mass_depletion(rg_param, ry_param, N_LIST, v_param, w_param, domain_radius=1.0, D=1.0,
-                                     d_tube=0, mass_threshold=0.01):
+                                     d_tube=0, mass_threshold=0.01,
+                                     center_init_cond=True, m_init=0, n_init=0):
     D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
 
     if len(N_LIST) > ry_param:
@@ -774,9 +853,11 @@ def output_time_until_mass_depletion(rg_param, ry_param, N_LIST, v_param, w_para
             raise IndexError(f'Angle {N_LIST[i]} is out of bounds, your range should be [0, {ry_param - 1}]')
     N_LIST.sort()
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     duration = ant.comp_until_mass_depletion(rg_param, ry_param, w_param, w_param,
                                              v_param, N_LIST, D_LAYER, A_LAYER, domain_radius, D, mass_threshold,
-                                             d_tube)
+                                             d_tube, center_init_cond, m_init, n_init)
     return duration
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -784,7 +865,8 @@ def output_time_until_mass_depletion(rg_param, ry_param, N_LIST, v_param, w_para
 def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST, MA_collection_factor=5,
                           domain_radius=1.0, D=1.0,
                           mass_checkpoint=10 ** 6, d_tube=0.0, MA_collection_factor_limit=10 ** 3, save_png=True,
-                          show_plt=False):
+                          show_plt=False,
+                          center_init_cond=True, m_init=0, n_init=0):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -824,14 +906,139 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
     # a_param = b_param/(delta_R * delta_theta * (fixed_ring_seg + 1))
     a_param = w_param
 
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
     ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST, D_LAYER,
                                            A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
                                            MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
-                                           relative_k, d_tube, domain_radius, D, mass_checkpoint)
+                                           relative_k, d_tube, domain_radius, D, mass_checkpoint,
+                                           center_init_cond, m_init, n_init)
 
     return pro.process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,
                                   MA_ALoI_timeseries,
                                   v_param, w_param, N_LIST, T_param, rg_param, ry_param, save_png, show_plt, MA_collection_factor, domain_radius, D)
+
+
+# (****) Create a timestamped output subdirectory that never overwrites an existing one (****)
+def _create_unique_timestamp_dir(parent_directory, timestamp_format="%Y-%m-%d_%H-%M"):
+    """
+    Create and return a subdirectory of parent_directory named after the time of
+    its creation, resolved up to the minute (e.g. 2026-08-05_15-54).
+
+    The parent directory is created on demand and seeded with a .gitkeep so the
+    (otherwise empty) output directory is retained under version control.
+
+    Edge case: a directory stamped with the exact same minute is never replaced.
+    A distinguishing marker is appended instead -- _(2), _(3), ... -- until an
+    unused name is found.
+    """
+    os.makedirs(parent_directory, exist_ok=True)
+
+    gitkeep_location = os.path.join(parent_directory, '.gitkeep')
+    if not os.path.exists(gitkeep_location):
+        open(gitkeep_location, 'a').close()
+
+    timestamp = datetime.now().strftime(timestamp_format)
+    directory_path = os.path.join(parent_directory, timestamp)
+
+    marker = 2
+    while True:
+        try:
+            os.makedirs(directory_path, exist_ok=False)
+            return directory_path
+        except FileExistsError:
+            directory_path = os.path.join(parent_directory, f'{timestamp}_({marker})')
+            marker += 1
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
+                           mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0):
+
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    relative_k = int(np.floor(K / MA_collection_factor))
+
+    b_param = w_param
+    a_param = w_param
+
+    m_star_dict = {}
+    t_star_dict = {}
+
+    # adjacent time points for the log scale line computation
+    x1 = 0.4
+    x2 = 0.5
+
+    # convert the real time to discretized time
+    t1_ = num.compute_K(rg_param, ry_param, x1)
+    t1 = num.closest_multiple(t1_, MA_collection_factor) // MA_collection_factor
+
+    t2_ = num.compute_K(rg_param, ry_param, x2)
+    t2 = num.closest_multiple(t2_, MA_collection_factor) // MA_collection_factor
+
+    for v_param in v_LIST:
+
+        D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+        MA_DL_timeseries = np.zeros([relative_k], dtype=np.float64)
+        MA_AL_timeseries = np.zeros([relative_k], dtype=np.float64)
+        MA_ALoT_timeseries = np.zeros([relative_k], dtype=np.float64)
+        MA_ALoI_timeseries = np.zeros([relative_k], dtype=np.float64)
+        MA_TM_timeseries = np.zeros([relative_k], dtype=np.float64)
+
+        _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
+        ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST, D_LAYER,
+                                               A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+                                               MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
+                                               relative_k, d_tube, domain_radius, D, mass_checkpoint,
+                                               center_init_cond, m_init, n_init)
+
+        y1 = np.log10(MA_TM_timeseries[t1])
+        y2 = np.log10(MA_TM_timeseries[t2])
+
+        m = (y2 - y1) / (x2 - x1)
+        b = y2 - m*x2
+
+        # characteristic time
+        t_star = -b/m
+        t_star_dict[v_param] = t_star
+
+        # compute the mass corresponding to t_star, and then record
+        k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
+        k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
+
+        m_star = MA_TM_timeseries[k_star]
+        m_star_dict[v_param] = m_star
+
+    v_axis = list(m_star_dict.keys())
+    m_axis = list(m_star_dict.values())
+
+    plt.scatter(v_axis, m_axis)
+    plt.xscale('log')
+    plt.xlabel(r"($t^*$) characteristic time")
+    plt.ylabel("(m) Mass")
+    plt.title(r"$m(t^*)$, " + f"N={len(N_LIST)}, " + f"a=b={w_param}, " + f"grid={rg_param}x{ry_param}")
+
+    # (****) Store the plot and the tabulated data under data_output/char_time_analysis (****)
+    # Both files land in a subdirectory stamped with the time of creation (up to the minute).
+    output_directory = _create_unique_timestamp_dir(fp.char_time_analysis_output)
+
+    plot_location = os.path.join(output_directory, 'char_t_analysis_plot.png')
+    plt.savefig(plot_location, bbox_inches='tight')
+
+    data_location = os.path.join(output_directory, 'char_t_analysis_data.csv')
+    df = pd.DataFrame({
+        'v': v_axis,
+        't_star': [t_star_dict[v_param] for v_param in v_axis],
+        'm_star': m_axis
+    })
+    df.to_csv(data_location, index=False)
+
+    print(f'Characteristic time plot saved to {plot_location}')
+    print(f'Characteristic time data saved to {data_location}')
+
+    plt.show()
+
+
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 

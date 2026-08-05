@@ -32,6 +32,9 @@ mass_analysis_advective_over_total = general_output / "mass_analysis_results/adv
 mass_analysis_total = general_output / "mass_analysis_results/total"
 mass_analysis_advective_over_initial = general_output / "mass_analysis_results/advective_over_initial"
 
+# Characteristic time analysis results
+char_time_analysis_output = general_output / "char_time_analysis"
+
 rect_logs = general_output / "output_logs"
 # styles_location = BASE_DIR / "gui_components/styles/style.qss"
 

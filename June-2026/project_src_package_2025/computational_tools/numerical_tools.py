@@ -2,6 +2,22 @@ from . import njit, np
 import pandas as pd
 
 
+# Returns the closest multiple k to n
+def closest_multiple(n: int, k: int):
+
+    above_count = n % k
+    # units above a multiple of k
+
+    below_count = k - (n % k)
+    # units below a multiple of k
+
+    # Determine the smallest difference
+    if above_count <= below_count:
+        return n - above_count
+    else:
+        return n + below_count
+
+
 # (****) Main numerical PDE solver implemented under the 2-step (time-step) method (****)
 @njit
 def comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST,
@@ -401,6 +417,30 @@ def calc_mass(phi, rho, k, d_radius, d_theta, curr_central, rings, rays, tube_pl
 @njit
 def compute_init_cond_cent(rg_param, domain_radius=1.0):
     return 1 / (np.pi * compute_dRad(rg_param, domain_radius) ** 2)
+
+
+# (****) Compute the initial condition placed at an arbitrary patch (m, n) (****)
+@njit
+def compute_init_cond_patch(rg_param, ry_param, m, domain_radius=1.0):
+    """
+    Unit point mass placed at the discrete patch (m, n): the m-th ring, n-th ray.
+
+    Returns the reciprocal of that patch's finite-volume area,
+        1 / ((m+1) * dr^2 * dtheta),
+    so that the total initial domain mass is 1 (matches compute_init_cond_cent,
+    which is the analogous center seed, 1 / (pi * dr^2)).
+
+    Independent of the ray index n, since every sector in ring m shares the same area.
+
+    :param rg_param: (int) # of radial rings in the domain
+    :param ry_param: (int) # of angular rays in the domain
+    :param m: (int) radial ring index of the seeded patch, in [0, rg_param-1]
+    :param domain_radius: (float) radius of the disk domain
+    :return: initial particle density for patch (m, n)
+    """
+    dRad = compute_dRad(rg_param, domain_radius)
+    dThe = compute_dThe(ry_param)
+    return 1 / ((m + 1) * dRad * dRad * dThe)
 
 
 # (****)  (****)

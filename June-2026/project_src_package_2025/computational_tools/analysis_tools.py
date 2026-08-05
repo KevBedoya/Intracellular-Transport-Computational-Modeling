@@ -14,7 +14,8 @@ from computational_tools import struct_init
 # (****) (****)
 def comp_diffusive_angle_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param, N_LIST, D_LAYER, A_LAYER, PvT_DL_snapshots,
                                             checkpoint_collect_container, mass_retention_threshold=0.01, T_fixed_ring_seg=0.5, d_tube=0,
-                                            domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                                            domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                            center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -32,7 +33,11 @@ def comp_diffusive_angle_snapshots_mass_dep(rg_param, ry_param, switch_param_a, 
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     v_param *= -1
 
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -77,7 +82,8 @@ def comp_diffusive_angle_snapshots_mass_dep(rg_param, ry_param, switch_param_a, 
 def comp_diffusive_rad_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param,
                                           N_LIST, D_LAYER, A_LAYER, R_fixed_angle, PvR_DL_snapshots, RvR_AL_snapshots,
                                           checkpoint_collect_container, mass_retention_threshold=0.01, domain_radius=1.0,
-                                          D=1.0, mass_checkpoint=10 ** 6, d_tube=0):
+                                          D=1.0, mass_checkpoint=10 ** 6, d_tube=0,
+                                          center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -86,7 +92,11 @@ def comp_diffusive_rad_snapshots_mass_dep(rg_param, ry_param, switch_param_a, sw
     dRad = num.compute_dRad(rg_param, domain_radius)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
 
     v_param *= -1
 
@@ -137,14 +147,19 @@ def comp_diffusive_rad_snapshots_mass_dep(rg_param, ry_param, switch_param_a, sw
 # Collecting DL, central-patch, and AL snapshots for static heat-plot visualization.
 def comp_diffusive_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param, N_LIST, D_LAYER, A_LAYER,
                                       HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots, checkpoint_collect_container,
-                                      domain_radius=1.0, D=1.0, mass_retention_threshold=0.01, mass_checkpoint=10 ** 6, d_tube=0.0):
+                                      domain_radius=1.0, D=1.0, mass_retention_threshold=0.01, mass_checkpoint=10 ** 6, d_tube=0.0,
+                                      center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
     dRad = num.compute_dRad(rg_param, D)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -202,7 +217,8 @@ def comp_diffusive_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch
 @njit
 def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param,
                                             N_LIST, D_LAYER, A_LAYER, PvT_DL_snapshots, checkpoint_collect_container,
-                                            T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                                            T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                            center_init_cond=True, m_init=0, n_init=0):
     print("Running optimized version.")
 
     if len(N_LIST) > ry_param:
@@ -220,7 +236,11 @@ def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -271,7 +291,8 @@ def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, 
 
 
 def comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param,
-                                            N_LIST, D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                                            N_LIST, D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                            center_init_cond=True, m_init=0, n_init=0):
     print("Running optimized version.")
 
     if len(N_LIST) > ry_param:
@@ -289,7 +310,11 @@ def comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, switch_pa
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -332,7 +357,8 @@ def comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, switch_pa
 
 @njit
 def comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param, N_LIST, D_LAYER, A_LAYER, checkpoint,
-                                           T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                                           T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                           center_init_cond=True, m_init=0, n_init=0):
     print("Running optimized version.")
 
     if len(N_LIST) > ry_param:
@@ -349,7 +375,11 @@ def comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, switch_param_a, swit
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -392,7 +422,8 @@ def comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, switch_param_a, swit
 
 @njit
 def comp_peak_time_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param, Jrr_sum_timeseries,
-                             N_LIST, D_LAYER, A_LAYER, relative_k, collection_factor, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                             N_LIST, D_LAYER, A_LAYER, relative_k, collection_factor, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                             center_init_cond=True, m_init=0, n_init=0):
     print("Running optimized version.")
 
     if len(N_LIST) > ry_param:
@@ -410,7 +441,11 @@ def comp_peak_time_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b,
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -462,7 +497,8 @@ def bc_secant_computation(data_filepath):
 @njit
 def comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
                                           N_LIST, D_LAYER, A_LAYER, R_fixed_angle, PvR_DL_snapshots, RvR_AL_snapshots,
-                                          checkpoint_collect_container, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, d_tube=0):
+                                          checkpoint_collect_container, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, d_tube=0,
+                                          center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -471,7 +507,11 @@ def comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, switch_param_a, sw
     dRad = num.compute_dRad(rg_param, domain_radius)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
 
     v_param *= -1
@@ -523,14 +563,19 @@ def comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, switch_param_a, sw
 # Collecting DL, central-patch, and AL snapshots for static heat-plot visualization.
 def comp_diffusive_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param, N_LIST,
                                       D_LAYER, A_LAYER, HM_DL_snapshots, HM_C_snapshots, MFPT_snapshots,
-                                      checkpoint_collect_container, domain_radius=1.0, D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0):
+                                      checkpoint_collect_container, domain_radius=1.0, D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
+                                      center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
     dRad = num.compute_dRad(rg_param, D)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     K_param = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
@@ -726,7 +771,8 @@ def comp_diffusive_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch
 def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
                                        N_LIST, D_LAYER, A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
                                        MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
-                                       relative_k, d_tube=0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+                                       relative_k, d_tube=0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                       center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -735,7 +781,11 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
     # Initialize the ring position (m) dependent extraction range dictionary
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -793,14 +843,19 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
 @njit
 def comp_until_mass_depletion(rg_param, ry_param, switch_param_a, switch_param_b, v_param, N_LIST, D_LAYER, A_LAYER,
                               domain_radius=1.0, D=1.0,
-                              mass_retention_threshold=0.01, d_tube=0.0):
+                              mass_retention_threshold=0.01, d_tube=0.0,
+                              center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
     dRad = num.compute_dRad(rg_param, D)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)

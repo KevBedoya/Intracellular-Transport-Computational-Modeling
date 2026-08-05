@@ -327,6 +327,7 @@ def plot_mass_analysis(data_filepath, v, w, N, T, rings, rays, mass_type, file_n
     # Add labels, legend, and title
     plt.xlabel("(T) Time")
     plt.ylabel("(m) Mass")
+    plt.yscale('log')
 
     title = f" Mass ({mass_type}) v. Time   W={w:.2e}   V={v}   N={len(N)}  Domain={rings}x{rays}"
 

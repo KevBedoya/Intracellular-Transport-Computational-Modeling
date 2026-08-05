@@ -6,14 +6,19 @@ from computational_tools import struct_init
 @njit
 def comp_mfpt_by_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b, v_param,
                            N_LIST, D_LAYER, A_LAYER, mass_checkpoint=10**6,
-                           domain_radius=1.0, D=1.0, mass_retention_threshold=0.01, d_tube=0.0):
+                           domain_radius=1.0, D=1.0, mass_retention_threshold=0.01, d_tube=0.0,
+                           center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
     dRad = num.compute_dRad(rg_param, domain_radius)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
     v_param *= -1
     k = 0
@@ -49,7 +54,8 @@ def comp_mfpt_by_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b, v
 # (****) (****)
 @njit
 def comp_mfpt_by_time(rg_param, ry_param, switch_param_a, switch_param_b, v_param, N_LIST, D_LAYER, A_LAYER,
-                      T_param, mass_checkpoint=10 ** 6, domain_radius=1.0, D=1.0, d_tube=0):
+                      T_param, mass_checkpoint=10 ** 6, domain_radius=1.0, D=1.0, d_tube=0,
+                      center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -57,7 +63,11 @@ def comp_mfpt_by_time(rg_param, ry_param, switch_param_a, switch_param_b, v_para
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -101,14 +111,19 @@ def comp_mfpt_by_time(rg_param, ry_param, switch_param_a, switch_param_b, v_para
 @njit
 def comp_mfpt_by_time_points_mass_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param,
                                       N_LIST, D_LAYER, A_LAYER, checkpoint_collect_container, MFPT_snapshots,
-                                      mass_retention_threshold=0.01, mass_checkpoint=10**6, domain_radius=1.0, D=1.0, d_tube=0.0):
+                                      mass_retention_threshold=0.01, mass_checkpoint=10**6, domain_radius=1.0, D=1.0, d_tube=0.0,
+                                      center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
     dRad = num.compute_dRad(rg_param, domain_radius)
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
@@ -160,7 +175,8 @@ def comp_mfpt_by_time_points_mass_dep(rg_param, ry_param, switch_param_a, switch
 @njit
 def comp_mfpt_by_time_points_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, v_param,
                                       N_LIST, D_LAYER, A_LAYER, checkpoint_collect_container, MFPT_snapshots,
-                                      T_param, mass_checkpoint=10**6, domain_radius=1.0, D=1.0, d_tube=0.0):
+                                      T_param, mass_checkpoint=10**6, domain_radius=1.0, D=1.0, d_tube=0.0,
+                                      center_init_cond=True, m_init=0, n_init=0):
 
     print("Running optimized version.")
 
@@ -168,7 +184,11 @@ def comp_mfpt_by_time_points_time_dep(rg_param, ry_param, switch_param_a, switch
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
-    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
