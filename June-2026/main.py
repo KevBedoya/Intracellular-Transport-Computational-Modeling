@@ -18,6 +18,8 @@ This module has two run modes:
 
 import sys
 import multiprocessing
+import time
+import json
 
 
 def _run_worker(argv):
@@ -101,8 +103,8 @@ def run_super_comp_off_center():
     from computational_tools import numerical_tools
 
     # --- domain / physics parameters ---
-    rg_param = 48                       # rings  (M)
-    ry_param = 48                       # rays   (N)
+    rg_param = 96                       # rings  (M)
+    ry_param = 96                       # rays   (N)
     v_param = .1                       # advective velocity on microtubules
     w_param = 100                        # switch rate (a = b = w)
     T_param = 1                       # dimensionless solution duration
@@ -121,13 +123,40 @@ def run_super_comp_off_center():
     # launch.collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST)
 
     # Task for 8/5/2026
-    # candidate V list : [0.1, 1, 10, 100, 1000, 10**4], for 48x48, N=4,8,16, a=b=10, 100
+    # candidate V list : [0.1, 1, 10, 100, 1000, 10**4], for 96x96, N=4,8,16,24, a=b=10, 100
 
-    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10**4], w_param, T_param, np.linspace(0, 48 - (48//4), 4, dtype=int))
-    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//8), 8, dtype=int))
-    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//16), 8, dtype=int), show_plt=False)
+    # --- Timed runs with 96x96 grid ---
+    print("\n=== Starting timed runs with 96x96 grid ===")
 
-    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//24), 24, dtype=int), show_plt=False)
+    # Block 1: 24 microtubules
+    print("\nBlock 1: 24 microtubules")
+    start_time = time.time()
+    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//24), 24, dtype=int), show_plt=False)
+    elapsed = time.time() - start_time
+    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+
+    # Block 2: 16 microtubules
+    print("\nBlock 2: 16 microtubules")
+    start_time = time.time()
+    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//16), 16, dtype=int), show_plt=False)
+    elapsed = time.time() - start_time
+    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+
+    # Block 3: 8 microtubules
+    print("\nBlock 3: 8 microtubules")
+    start_time = time.time()
+    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//8), 8, dtype=int), show_plt=False)
+    elapsed = time.time() - start_time
+    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+
+    # Block 4: 4 microtubules
+    print("\nBlock 4: 4 microtubules")
+    start_time = time.time()
+    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//4), 4, dtype=int), show_plt=False)
+    elapsed = time.time() - start_time
+    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+
+    print("\n=== All runs completed ===" )
 
 
 if __name__ == "__main__":
