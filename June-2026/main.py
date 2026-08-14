@@ -101,12 +101,12 @@ def run_super_comp_off_center():
     from computational_tools import numerical_tools
 
     # --- domain / physics parameters ---
-    rg_param = 16                       # rings  (M)
-    ry_param = 16                       # rays   (N)
+    rg_param = 48                       # rings  (M)
+    ry_param = 48                       # rays   (N)
     v_param = .1                       # advective velocity on microtubules
     w_param = 100                        # switch rate (a = b = w)
     T_param = 1                       # dimensionless solution duration
-    N_LIST = np.array([0,4,8,12])   # microtubule angular positions
+    N_LIST = np.array([0, 4, 8, 12])   # microtubule angular positions
     d_tube = 0.0                        # microtubule extraction width
     Timestamp_List = [1, 1.5, 2, 2.5]   # snapshot times (each <= T_param)
 
@@ -123,7 +123,11 @@ def run_super_comp_off_center():
     # Task for 8/5/2026
     # candidate V list : [0.1, 1, 10, 100, 1000, 10**4], for 48x48, N=4,8,16, a=b=10, 100
 
-    launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100], w_param, T_param, N_LIST)
+    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10**4], w_param, T_param, np.linspace(0, 48 - (48//4), 4, dtype=int))
+    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//8), 8, dtype=int))
+    # launch.collect_char_time_mass(rg_param, ry_param, [0.1, 1, 10, 100, 1000, 10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//16), 8, dtype=int), show_plt=False)
+
+    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 48 - (48//24), 24, dtype=int), show_plt=False)
 
 
 if __name__ == "__main__":

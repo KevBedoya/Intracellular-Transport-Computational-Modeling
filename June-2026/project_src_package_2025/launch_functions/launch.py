@@ -953,9 +953,10 @@ def _create_unique_timestamp_dir(parent_directory, timestamp_format="%Y-%m-%d_%H
 
 
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
-                           mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0):
+                           mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True):
 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    print("deltaT = ", num.compute_dT(rg_param, ry_param))
     relative_k = int(np.floor(K / MA_collection_factor))
 
     b_param = w_param
@@ -1014,9 +1015,9 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
 
     plt.scatter(v_axis, m_axis)
     plt.xscale('log')
-    plt.xlabel(r"($t^*$) characteristic time")
+    plt.xlabel(r"($v$) velocity")
     plt.ylabel("(m) Mass")
-    plt.title(r"$m(t^*)$, " + f"N={len(N_LIST)}, " + f"a=b={w_param}, " + f"grid={rg_param}x{ry_param}")
+    plt.title(r"$m(v)$ at $t^*$, " + f"N={len(N_LIST)}, " + f"a=b={w_param}, " + f"grid={rg_param}x{ry_param}")
 
     # (****) Store the plot and the tabulated data under data_output/char_time_analysis (****)
     # Both files land in a subdirectory stamped with the time of creation (up to the minute).
@@ -1036,7 +1037,8 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     print(f'Characteristic time plot saved to {plot_location}')
     print(f'Characteristic time data saved to {data_location}')
 
-    plt.show()
+    if show_plt:
+        plt.show()
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
