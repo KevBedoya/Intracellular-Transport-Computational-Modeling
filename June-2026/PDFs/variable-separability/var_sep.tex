@@ -1,0 +1,244 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{float}
+
+\lstset{
+    language=Matlab,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false
+}
+    
+
+\title{Numerical Analysis of Variable Separability in a Boundary-Value Diffusion Equation in Polar Coordinates [Report]}
+\author{Kevin Bedoya}
+
+\begin{document}
+
+\maketitle
+
+\section{Methodology}
+
+\subsection{Variable Separability Analysis}
+
+To determine whether the computed diffusion density exhibits approximate variable separability, the numerical solution was analyzed using matrix-based techniques motivated by the structure of a separable function.
+
+Let
+
+\[
+D \in \mathbb{R}^{(m-1)\times n}
+\]
+
+denote the truncated density matrix obtained from the numerical solution. The final radial ring was excluded from the analysis because it corresponds to the absorbing boundary condition
+
+\[
+\phi(r=1,\theta)=0,
+\]
+
+and therefore consists entirely of zeros. Each row of \(D\) corresponds to a discrete radial location, while each column corresponds to a discrete angular location.
+
+If the diffusion density is separable,
+
+\[
+\phi(r,\theta)=R(r)\Theta(\theta),
+\]
+
+then the sampled density matrix admits the factorization
+
+\[
+D = \mathbf{r}\mathbf{\theta}^{T},
+\]
+
+where \(\mathbf r\) contains samples of the radial component and \(\mathbf \theta\) contains samples of the angular component. Consequently, a perfectly separable density matrix has rank one.
+
+To investigate this property numerically, three complementary diagnostics were employed.
+
+\subsubsection{Angular Trajectory Alignment}
+
+The angular trajectory matrix was defined as
+
+\[
+A = D^{T}.
+\]
+
+Each column of \(A\) contains the angular density profile
+
+\[
+\phi(\theta \mid r=r_i)
+\]
+
+at a fixed discrete radius \(r_i\).
+
+For a separable solution,
+
+\[
+\phi(\theta \mid r=r_i)
+=
+R(r_i)\Theta(\theta),
+\]
+
+so every angular trajectory differs only by a multiplicative constant. Therefore all columns of \(A\) should be mutually aligned.
+
+Each column of \(A\) was normalized to unit Euclidean norm,
+
+\[
+\widehat{a}_i
+=
+\frac{a_i}{\|a_i\|_2},
+\]
+
+and the normalized matrix
+
+\[
+\widehat{A}
+=
+\begin{bmatrix}
+\widehat{a}_1 &
+\widehat{a}_2 &
+\cdots &
+\widehat{a}_{m-1}
+\end{bmatrix}
+\]
+
+was formed. The cosine similarity matrix
+
+\[
+C_A
+=
+\widehat{A}^{T}\widehat{A}
+\]
+
+was then computed. The entries of \(C_A\) represent pairwise cosine similarities between normalized angular trajectories.
+
+Two metrics were used to quantify alignment:
+
+\[
+E_{\mathrm{mean}}
+=
+\frac{
+\left\|
+\,|C_A|-1
+\right\|_F
+}
+{\sqrt{N}},
+\]
+
+where \(N\) denotes the total number of entries in \(C_A\), and
+
+\[
+E_{\mathrm{max}}
+=
+\max_{i,j}
+\left|
+\,|C_{A,ij}|-1
+\right|.
+\]
+
+The first quantity measures the average deviation from perfect alignment, while the second measures the worst-case deviation. Values near zero indicate that the angular trajectories are nearly proportional across all radii.
+
+\subsubsection{Radial Trajectory Alignment}
+
+An analogous procedure was performed using the radial trajectory matrix
+
+\[
+B=D.
+\]
+
+Each column of \(B\) contains the radial density profile
+
+\[
+\phi(r \mid \theta=\theta_j)
+\]
+
+at a fixed angular position \(\theta_j\).
+
+For a separable solution,
+
+\[
+\phi(r \mid \theta=\theta_j)
+=
+\Theta(\theta_j)R(r),
+\]
+
+so all radial trajectories should also be proportional. After column normalization, a cosine similarity matrix
+
+\[
+C_B
+=
+\widehat{B}^{T}\widehat{B}
+\]
+
+was formed and the same mean and maximum alignment errors were computed. Values close to zero indicate that the radial trajectories are nearly proportional across all angular positions.
+
+\subsubsection{Rank-One Dominance}
+
+In addition to trajectory alignment, the full density matrix was examined using the singular value decomposition
+
+\[
+D = U\Sigma V^{T}.
+\]
+
+Let
+
+\[
+\sigma_1 \ge \sigma_2 \ge \cdots
+\]
+
+denote the singular values of \(D\). The rank-one energy ratio was defined as
+
+\[
+\eta
+=
+\frac{\sigma_1^2}
+{\sum_{k}\sigma_k^2}.
+\]
+
+This quantity measures the fraction of the total matrix energy captured by the dominant singular mode. A perfectly separable solution has rank one after discretization. 
+
+\[
+\eta = 1.
+\]
+
+\section{Results}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{48x48_T=2_angular.png}
+    \label{fig:placeholder}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{48x48_T=2_radial.png}
+    \label{fig:placeholder}
+\end{figure}
+
+
+
+\begin{lstlisting}
+
+Frobenius Cosine Similarity Metric (phi v. theta):  8.772448094240826e-05
+Max Deviation (phi v. theta):  8.772448094240826e-05
+Frobenius Cosine Similarity Metric (phi v. radius):  0.02092182614888484
+Max Deviation (phi v. radius):  0.028431069706455703
+Rank-1 dominance ratio (general):  0.9999839882679707
+    
+\end{lstlisting}
+
+
+
+\end{document}
+

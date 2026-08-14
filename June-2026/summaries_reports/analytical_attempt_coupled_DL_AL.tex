@@ -1,0 +1,370 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{float}
+\usepackage{color}
+
+\newcommand{\rd}{\mathrm{d}}
+\newcommand{\eps}{\varepsilon}
+
+\title{Analytical Attempt at the Coupled Diffusive--Advective Disk Problem:\\
+Where the Separation Argument Breaks, and the Correct Route Forward}
+\author{Kevin Bedoya \and (analysis notes)}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We revisit the eigenvalue formulation of the two--layer (diffusive layer DL +
+advective microtubule layer AL) problem on the wedge. We audit the existing
+derivation, accept every step through the elimination of the AL density as a
+functional $R[F]$ and the in--wedge Helmholtz separation, and identify the
+precise point at which the argument becomes inconsistent: the angular boundary
+conditions are miscounted. The microtubule (MT) condition ``BC3'' is not an
+extra constraint layered on top of periodicity; it \emph{is} the second
+angular boundary condition (a derivative \emph{jump}, not derivative
+continuity). Re--imposing the boundary data correctly, we derive the exact
+eigen--conditions for a separable ansatz and show that two structural
+obstructions forbid a single--product solution: an explicit $2/r$ geometric
+coefficient in BC3, and the fact that $R(r)$ is not proportional to the radial
+profile $\rho(r)$. This is the analytic counterpart of the numerical finding
+that the density is $g(r)+a(r)\cos N\theta$ rather than one product. We then
+set up the construction that does work --- the Laplace/resolvent method ---
+carry the per--mode radial Green's function in closed form, and exhibit the
+transcendental secular determinant whose roots are the (generally complex)
+decay rates. A two--mode reduction consistent with the numerics gives an
+explicit leading--order dispersion relation.
+\end{abstract}
+
+\section{Problem and notation}
+
+In the eigenmode ansatz $\bigl(\phi,\rho\bigr)=\bigl(F(r,\theta),R(r)\bigr)e^{-\sigma t}$
+the reduced wedge problem (problem statement, Sec.~2--3) is
+\begin{equation}
+-\sigma F=\nabla^{2}F
+=F_{rr}+\tfrac1r F_r+\tfrac1{r^{2}}F_{\theta\theta},
+\qquad
+-\sigma R = v R' + a\,F(r,0) - b\,R,
+\label{eq:eig}
+\end{equation}
+on $r\in[0,1]$, $\theta\in[0,2\pi/N]$, with
+\begin{align}
+&\text{(i)}\ F(1,\theta)=0,\qquad
+\text{(ii)}\ F(r,0)=F\!\left(r,\tfrac{2\pi}{N}\right),\nonumber\\
+&\text{(iii)}\ a\,F(r,0)=\frac{2}{r}\,\partial_\theta F\big|_{\theta=0}+b\,R(r),
+\qquad
+\text{(iv)}\ R(1)=0,
+\label{eq:bcs}
+\end{align}
+together with regularity at $r=0$. Condition (iii) is the MT condition obtained
+by integrating \eqref{eq:eig} across the filament at $\theta=0$, after using the
+$\theta\!\to\!-\theta$ symmetry
+$-\partial_\theta F|_{2\pi/N}=\partial_\theta F|_{0}$.
+
+\section{Audit of the existing derivation}
+
+\paragraph{Valid: elimination of the AL density.} The $R$--equation in
+\eqref{eq:eig} is first order in $r$ with the single condition $R(1)=0$. With
+$F(r,0)$ regarded as a source it integrates exactly,
+\begin{equation}
+R(r)=-\frac{a}{v}\,e^{\frac{b-\sigma}{v}r}
+\int_{1}^{r} e^{-\frac{b-\sigma}{v}r'}\,F(r',0)\,\rd r'
+\;=:\;R[F](r).
+\label{eq:RofF}
+\end{equation}
+This step is correct and we keep it. Substituting \eqref{eq:RofF} into (iii)
+closes the problem on $F$ alone.
+
+\paragraph{Valid: in--wedge separation.} In the open wedge
+$\theta\in(0,2\pi/N)$ there is no source, so a separated trial
+$F=\rho(r)\Theta(\theta)$ in \eqref{eq:eig} gives, with separation constant
+$\mu=\nu^{2}$,
+\begin{equation}
+\Theta''+\nu^{2}\Theta=0,
+\qquad
+\rho''+\tfrac1r\rho'+\Bigl(\sigma-\tfrac{\nu^{2}}{r^{2}}\Bigr)\rho=0 .
+\label{eq:sep}
+\end{equation}
+The radial equation is Bessel's; the solution regular at the origin is
+\begin{equation}
+\rho(r)=J_{\nu}\!\bigl(\sqrt{\sigma}\,r\bigr),
+\label{eq:rho}
+\end{equation}
+and the absorbing condition (i) requires
+\begin{equation}
+J_{\nu}\!\bigl(\sqrt{\sigma}\bigr)=0 .
+\label{eq:dirichlet}
+\end{equation}
+All of this is correct.
+
+\paragraph{The flawed step.} The derivation next writes
+``$\Theta(0)=\Theta(2\pi/N)\Rightarrow \nu=nN$'' and proceeds with the single
+Fourier mode $e^{inN\theta}$. A second--order angular ODE \eqref{eq:sep}
+requires \emph{two} boundary conditions. The standard Fourier modes
+$e^{inN\theta}$ with $\nu=nN$ are selected by \emph{smooth} periodicity ---
+continuity of \emph{both} the value \emph{and} the first derivative across
+$\theta=0\equiv2\pi/N$. But the MT does \textbf{not} impose derivative
+continuity: integrating across the filament produced a derivative \emph{jump},
+which is exactly condition (iii). Thus smooth periodicity already exhausts the
+two angular boundary conditions, and (iii) is then mistakenly treated as a
+third, extra condition. This double--count is the origin of:
+\begin{itemize}
+\item the over--determined relation eq.~(thirdBC\_long) in the problem
+statement, an $r$--dependent identity required to hold for all $r$ with no free
+parameter left;
+\item the puzzle recorded in blue, ``the $\sigma$'s are determined by the
+diffusive BC alone.'' They appear so only because periodicity was used to fix
+$\nu=nN$ and \eqref{eq:dirichlet} was then read as $\sqrt\sigma=\kappa_{nN,j}$,
+spending all the freedom before the physics of the MTs (condition (iii)) had
+been imposed.
+\end{itemize}
+We pick up precisely here and impose the correct pair of angular conditions:
+periodic \emph{value} (ii) and the MT jump (iii).
+
+\section{Exact eigen--conditions for the separable ansatz}
+
+Write the angular factor in real form,
+\begin{equation}
+\Theta(\theta)=\alpha\cos(\nu\theta)+\beta\sin(\nu\theta),
+\qquad
+\Theta(0)=\alpha,\quad \Theta'(0)=\nu\beta .
+\end{equation}
+Periodic value (ii) gives
+\begin{equation}
+\alpha\bigl(1-\cos\tfrac{2\pi\nu}{N}\bigr)=\beta\,\sin\tfrac{2\pi\nu}{N}.
+\label{eq:B1}
+\end{equation}
+For the MT condition (iii), note $R[F]$ in \eqref{eq:RofF} is linear in
+$F(r,0)=\alpha\,\rho(r)$, so $R(r)=\alpha\,\widetilde R(r)$ with
+\begin{equation}
+\widetilde R(r):=-\frac{a}{v}\,e^{\frac{b-\sigma}{v}r}
+\int_{1}^{r} e^{-\frac{b-\sigma}{v}r'}\,\rho(r')\,\rd r',
+\qquad
+v\,\widetilde R'=(b-\sigma)\widetilde R-a\,\rho,\quad \widetilde R(1)=0.
+\label{eq:Rtilde}
+\end{equation}
+Substituting $F=\rho\Theta$ into (iii) and dividing by the common $\rho(r)$,
+\begin{equation}
+\boxed{\;
+\alpha\Bigl[a-\frac{b\,\widetilde R(r)}{\rho(r)}\Bigr]
+=\frac{2\nu\beta}{r}\;}
+\qquad\text{for all }r\in[0,1].
+\label{eq:master}
+\end{equation}
+Equation \eqref{eq:master} is the heart of the matter, and it exposes two
+independent obstructions to a separable solution.
+
+\subsection{Obstruction 1: the geometric $1/r$}
+Even with \emph{no} feedback ($b=0$), \eqref{eq:master} reads
+$\alpha a=2\nu\beta/r$, which cannot hold for all $r$ unless $\alpha a=0$ and
+$\nu\beta=0$. The explicit $2/r$ in BC3 --- inherited from the $1/r^{2}$ angular
+term of the polar Laplacian and the $1/r$ in the $\delta(\theta-\theta_i)/r$
+source --- makes the effective angular ``Robin coefficient''
+$\Theta'(0)/\Theta(0)=\tfrac{r}{2}\bigl(a-b\widetilde R/(\alpha\rho)\bigr)$
+depend on $r$. A constant separation constant $\nu$ cannot meet an
+$r$--dependent angular condition.
+
+\subsection{Obstruction 2: $R$ is not proportional to $\rho$}
+Restore $b\neq0$. For \eqref{eq:master} to hold one would need
+$a\rho(r)-b\widetilde R(r)\propto \rho(r)/r$, i.e.\ $\widetilde R$ expressible
+through $\rho$ and $\rho/r$. But $\widetilde R$ solves the first--order ODE
+\eqref{eq:Rtilde}; eliminating it, a separable solution would force
+$v\rho'=-\sigma\rho$, i.e.\ $\rho(r)\propto e^{-\sigma r/v}$ --- incompatible
+with the Bessel form \eqref{eq:rho} except trivially. Concretely, the purely
+even branch ($\beta=0$, which by \eqref{eq:B1} forces $\nu=nN$, including the
+angularly symmetric $n=0$) collapses \eqref{eq:master} to
+$a\rho=b\widetilde R$, and the same elimination gives $v\rho'=-\sigma\rho$,
+hence $\rho\equiv0$. \textbf{There is no nontrivial angularly symmetric
+separable eigenmode}; the advective exponential and the diffusive Bessel
+profile are simply different functions.
+
+\subsection{No single--Helmholtz--mode eigenfunctions}
+One might hope to rescue separability with a finite sum of Fourier modes at a
+common $\sigma$. This fails for an independent reason. Any genuine eigenmode
+obeys $-\sigma F=\nabla^2F$, regularity, and $F(1,\theta)=0$ for \emph{all}
+$\theta$; expanding $F=\sum_n A_n J_{nN}(\sqrt\sigma r)e^{inN\theta}$ and using
+orthogonality of the $e^{inN\theta}$ forces
+\begin{equation}
+A_n\,J_{nN}\!\bigl(\sqrt\sigma\bigr)=0\quad\text{for every }n .
+\end{equation}
+A nontrivial multi--mode solution would need $\sqrt\sigma$ to be a common zero
+of $J_{nN}$ for two distinct orders. Bessel functions of the first kind of
+distinct (integer) order share \emph{no} positive zeros (Bourget's hypothesis,
+proven), and for real order all zeros are real, so complex $\sigma$ does not
+help. Hence at any admissible $\sigma$ only one angular order survives --- and
+\S3.1--\S3.2 already showed that the single surviving mode cannot satisfy the MT
+condition.
+
+\paragraph{Conclusion of \S3.} The coupled operator admits \emph{no
+eigenfunction whose spatial part is a single separated Helmholtz--Bessel mode}.
+This is the exact analytic statement behind the numerical result: the computed
+density is well described by $g(r)+a(r)\cos N\theta$ (a dominant angularly
+symmetric piece plus a small $r$--dependent $N$--fold modulation), i.e.\ a sum
+of structures, never one product. Separation of variables is not merely
+inconvenient here --- it is inconsistent with the microtubule boundary
+condition.
+
+\section{The correct route: time--Laplace / resolvent construction}
+
+Because exponential--separable modes do not exist, we solve the
+\emph{time--dependent} problem directly and read the decay rates off as poles.
+Let $\widehat\phi(r,\theta,s)=\int_0^\infty \phi\,e^{-st}\,\rd t$ and likewise
+$\widehat\rho$. With initial data $\phi(r,\theta,0)=\phi_0(r)$ (angularly
+symmetric) and $\rho(\cdot,0)=0$, \eqref{eq:eig}--\eqref{eq:bcs} transform to
+\begin{equation}
+\bigl(\nabla^{2}-s\bigr)\widehat\phi=-\phi_0(r),
+\qquad
+\widehat\rho(r,s)=-\frac{a}{v}\,e^{\frac{b+s}{v}r}
+\int_1^r e^{-\frac{b+s}{v}r'}\widehat\phi(r',0,s)\,\rd r',
+\label{eq:lap}
+\end{equation}
+with $\widehat\phi(1,\theta,s)=0$, periodic value, and the transformed MT
+condition
+\begin{equation}
+a\,\widehat\phi(r,0,s)=\frac{2}{r}\,\partial_\theta\widehat\phi\big|_{0}
++b\,\widehat\rho(r,s).
+\label{eq:lapbc}
+\end{equation}
+(Here $\sigma\to -s$ relative to \S3, so the radial functions below use the
+\emph{modified} Bessel argument when $s>0$.)
+
+\subsection{Per--mode radial Green's function}
+Expand in the angular Fourier basis allowed by periodic value,
+$\widehat\phi=\sum_{n\in\mathbb Z}\widehat\phi_n(r,s)\,e^{inN\theta}$. Each
+coefficient solves the inhomogeneous radial equation
+\begin{equation}
+\widehat\phi_n''+\tfrac1r\widehat\phi_n'
+-\Bigl(s+\tfrac{(nN)^2}{r^2}\Bigr)\widehat\phi_n
+=-\,\phi_0(r)\,\delta_{n0},
+\qquad
+\widehat\phi_n(1,s)=0,\quad \text{regular at }0 .
+\label{eq:modeeq}
+\end{equation}
+The homogeneous solutions are the modified Bessel functions
+$I_{nN}(\sqrt{s}\,r)$ (regular at $0$) and $K_{nN}(\sqrt{s}\,r)$ (regular at
+$\infty$). The Green's function satisfying regularity at $r=0$ and
+$G_n(1,r';s)=0$ at $r=1$ is the standard Sturm--Liouville construction
+\begin{equation}
+G_n(r,r';s)=
+\frac{1}{W(r')}\,
+\frac{u_n^{0}(r_<)\,u_n^{1}(r_>)}{}\,,
+\qquad
+\begin{aligned}
+&u_n^{0}(r)=I_{nN}(\sqrt s\,r),\\
+&u_n^{1}(r)=I_{nN}(\sqrt s\,r)K_{nN}(\sqrt s)-K_{nN}(\sqrt s\,r)I_{nN}(\sqrt s),
+\end{aligned}
+\label{eq:green}
+\end{equation}
+where $u_n^{1}$ is the homogeneous solution vanishing at $r=1$, $r_<=\min(r,r')$,
+$r_>=\max(r,r')$, and the Wronskian combination $W(r')=r'\,[\,u_n^{0}\,u_n^{1\prime}-u_n^{0\prime}u_n^{1}\,](r')$
+is constant in $r'$ (equal to $u_n^0\!\cdot$ a $\theta$--independent constant by
+Abel's identity). For the only forced mode ($n=0$),
+\begin{equation}
+\widehat\phi_0(r,s)=\int_0^1 G_0(r,r';s)\,\phi_0(r')\,\rd r' ,
+\label{eq:phihat0}
+\end{equation}
+which is exact and closed in modified Bessel functions.
+
+\subsection{The microtubule condition couples the modes; the secular
+determinant}
+Equation \eqref{eq:lapbc} is imposed on the ray $\theta=0$, where
+$\widehat\phi(r,0,s)=\sum_n\widehat\phi_n(r,s)$ and
+$\partial_\theta\widehat\phi|_0=\sum_n inN\,\widehat\phi_n(r,s)$. Substituting
+\eqref{eq:lap} for $\widehat\rho$ (a linear functional of
+$\widehat\phi(\cdot,0,s)$) turns \eqref{eq:lapbc} into a single linear
+integro--functional relation among the radial coefficients
+$\{\widehat\phi_n\}$, holding for all $r$. Projecting it onto the radial
+eigenbasis $\{J_{nN}(\kappa_{nN,j}r)\}_j$ (the Dirichlet basis of
+\eqref{eq:modeeq}) yields an infinite linear system
+\begin{equation}
+\mathsf{M}(s)\,\mathbf c=\mathbf f(s),
+\label{eq:linsys}
+\end{equation}
+where $\mathbf c$ collects the modal/radial amplitudes, $\mathbf f$ is the
+$n=0$ forcing from \eqref{eq:phihat0}, and the matrix $\mathsf M(s)$ encodes the
+$a$, $b/v$, and $2inN/r$ couplings together with the AL integral kernel
+$e^{(b+s)(r-r')/v}$. The solution $\mathbf c(s)=\mathsf M(s)^{-1}\mathbf f(s)$
+is meromorphic in $s$; the physical density is recovered by Bromwich inversion
+\begin{equation}
+\phi(r,\theta,t)=\frac{1}{2\pi i}\int_{\gamma-i\infty}^{\gamma+i\infty}
+e^{st}\,\widehat\phi(r,\theta,s)\,\rd s
+=\sum_{k}\operatorname*{Res}_{s=s_k}\bigl[e^{st}\widehat\phi\bigr],
+\end{equation}
+the sum running over the roots of the \emph{secular determinant}
+\begin{equation}
+\boxed{\ \det \mathsf M(s)=0\ }
+\label{eq:secular}
+\end{equation}
+together with any branch contribution. The roots $s_k=-\sigma_k$ are the decay
+rates; they are generally complex (the operator is non--self--adjoint because of
+the advection $v$ and the one--sided MT coupling), and they are \emph{not} the
+Bessel zeros $\kappa_{nN,j}^2$ --- those reappear only as the poles of the
+\emph{uncoupled} ($a=b=0$) Green's function. This is the rigorous replacement
+for the (non--existent) separable spectrum.
+
+\section{A tractable leading--order reduction (guided by the numerics)}
+
+The numerics show that two angular modes ($n=0$ and $n=1$, order $N$) carry
+$0.9998$ and $0.0002$ of the energy, with all higher modes negligible. Truncating
+\eqref{eq:linsys} to $n\in\{0,\pm1\}$ and to the lowest radial Dirichlet
+function in each order gives a small explicit system. Writing
+$\widehat\phi_0\approx c_0\,J_0(\kappa_{0,1}r)$ and
+$\widehat\phi_{\pm1}\approx c_{\pm1}\,J_N(\kappa_{N,1}r)$ and projecting
+\eqref{eq:lapbc} onto these two radial profiles produces a $2\times2$ secular
+block
+\begin{equation}
+\det
+\begin{bmatrix}
+a\,p_{00}(s)-b\,q_{00}(s) & a\,p_{0N}(s)-b\,q_{0N}(s)\\[4pt]
+a\,p_{N0}(s)-b\,q_{N0}(s)-\tfrac{2N}{\,\cdot\,}\,\ell_{N}(s)
+& a\,p_{NN}(s)-b\,q_{NN}(s)
+\end{bmatrix}=0,
+\label{eq:2x2}
+\end{equation}
+where $p_{mn}(s)=\int_0^1 J_{mN}(\kappa_{mN,1}r)J_{nN}(\kappa_{nN,1}r)\,\rd r$
+are overlap integrals, $q_{mn}(s)$ are the same overlaps weighted by the AL
+kernel from \eqref{eq:lap}, and $\ell_N(s)$ carries the $2inN/r$ angular--jump
+term. The dominant (slowest) root $s_\star(a,b,v,N)$ of \eqref{eq:2x2} is the
+leading decay rate, and its eigenvector fixes the ratio $c_{\pm1}/c_0=a(r)$
+amplitude observed numerically (small, growing toward the rim because
+$J_N(\kappa_{N,1}r)$ is pushed outward by its centrifugal $N^2/r^2$ barrier).
+This reproduces, analytically and to leading order, the $g(r)+a(r)\cos N\theta$
+structure measured by the affine--overlap test, and reduces the eigenvalue to a
+single transcendental equation that can be solved numerically for $s_\star$.
+
+\section{Summary}
+
+\begin{itemize}
+\item Steps accepted as valid: the AL elimination $R[F]$ \eqref{eq:RofF} and the
+in--wedge Helmholtz separation \eqref{eq:rho}--\eqref{eq:dirichlet}.
+\item Pick--up point: immediately after \eqref{eq:dirichlet}. The step
+$\nu=nN$ from periodicity is where the argument fails, because it spends both
+angular boundary conditions on \emph{smooth} periodicity, leaving the MT
+condition (iii) as a phantom extra constraint.
+\item Imposing periodic value (ii) and the MT jump (iii) as the two angular
+conditions yields the master relation \eqref{eq:master}, which cannot hold for
+any single separated mode: the $2/r$ geometry makes the angular eigenvalue
+$r$--dependent, and $R\not\propto\rho$. With Bourget's theorem ruling out
+multi--mode single--$\sigma$ states, the coupled operator has no separable
+exponential eigenfunctions.
+\item The exact solution is therefore non--separable and is delivered by the
+Laplace/resolvent construction: a closed modified--Bessel Green's function per
+angular mode \eqref{eq:green}--\eqref{eq:phihat0}, coupled through the MT
+condition into the secular determinant \eqref{eq:secular}, whose roots are the
+(complex) decay rates.
+\item A two--mode reduction \eqref{eq:2x2}, justified by the measured energy
+budget, gives an explicit leading--order dispersion relation and recovers the
+numerically observed $g(r)+a(r)\cos N\theta$ form.
+\end{itemize}
+
+\noindent\textit{Honest status.} A closed--form $\phi(r,\theta,t)$ is not
+attainable in elementary functions; the obstruction is structural
+(non--self--adjoint coupling through an $r$--dependent boundary functional), not
+a gap in effort. What \emph{is} closed form: the per--mode Green's function, the
+exact eigen--conditions, and the secular determinant whose numerical roots
+furnish the spectrum.
+
+\end{document}

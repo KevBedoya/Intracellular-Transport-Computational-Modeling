@@ -1,0 +1,368 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{float}
+\usepackage{color}
+
+\newcommand{\rd}{\mathrm{d}}
+\newcommand{\eps}{\varepsilon}
+
+\title{An Additive Ansatz for the Coupled DL--AL Helmholtz Problem:\\
+$F(r,\theta)=A(r)+B(r)\,\Theta(\theta)$ in Place of the Product $R(r)\Theta(\theta)$}
+\author{Kevin Bedoya \and (analysis notes)}
+\date{June 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The problem statement (\texttt{2d-problem.tex}) and the audit note
+(\texttt{analytical\_attempt\_coupled\_DL\_AL.tex}) both attack the in--wedge
+Helmholtz eigenproblem with the multiplicative separation
+$F(r,\theta)=R(r)\Theta(\theta)$ and find it inconsistent with the microtubule
+(MT) boundary condition. Here we test a different and physically motivated
+trial: the \emph{additive} ansatz
+\[
+F(r,\theta)=A(r)+B(r)\,\Theta(\theta),
+\]
+suggested by the numerical observation that the density is well described by
+$g(r)+a(r)\cos N\theta$ --- a dominant angularly symmetric part plus a small
+$N$--fold modulation. We substitute it into the Helmholtz equation and show that
+the substitution \emph{separates cleanly}: it forces $\Theta''+\nu^2\Theta=0$ and
+sends $A$ and $B$ to Bessel equations of orders $0$ and $\nu$ respectively, both
+at the \emph{same} $\sigma$. The crucial consequence is structural: the additive
+ansatz is not more general than separation of variables --- it is exactly the
+two--term Fourier--Bessel partial sum (the $\nu=0$ mode plus the $\nu$ mode), and
+its only genuinely new ingredient relative to a single product is the
+angular--mean channel $A(r)=J_0(\sqrt\sigma r)$, i.e.\ the numerically dominant
+$g(r)$. We then apply the boundary conditions and find that the ansatz fails to
+deliver an exact single--$\sigma$ eigenmode, but it fails \emph{transparently}:
+the outer absorbing condition alone forces $\sqrt\sigma$ to be a common positive
+zero of $J_0$ and $J_\nu$, which Bourget's (proven) hypothesis forbids. The two
+channels demand mutually incompatible decay rates. This localizes the
+obstruction at the \emph{outer} boundary --- one line, before the MT condition
+is even invoked --- and shows the additive ansatz to be precisely the analytic
+skeleton of the two--mode (Laplace/secular) reduction that does work.
+\end{abstract}
+
+\section{Setup and the new ansatz}
+
+We work with the reduced wedge eigenproblem exactly as stated in
+\texttt{2d-problem.tex}, Eqs.~(\ref{eq:helm})--(\ref{eq:bc4}) below. With
+$(\phi,\rho)=(F(r,\theta),R(r))e^{-\sigma t}$, the diffusive layer (DL) obeys the
+Helmholtz equation
+\begin{equation}
+-\sigma F=\nabla^2 F=F_{rr}+\tfrac1r F_r+\tfrac1{r^2}F_{\theta\theta},
+\qquad r\in[0,1],\ \theta\in\bigl[0,\tfrac{2\pi}{N}\bigr],
+\label{eq:helm}
+\end{equation}
+with the advective layer (AL) eliminated as the linear functional
+\begin{equation}
+R(r)=R[F(\cdot,0)](r)
+=-\frac{a}{v}\,e^{\frac{b-\sigma}{v}r}
+\int_1^r e^{-\frac{b-\sigma}{v}r'}\,F(r',0)\,\rd r',
+\label{eq:RofF}
+\end{equation}
+and boundary conditions
+\begin{align}
+\text{(i)}\ & F(1,\theta)=0,
+&\text{(ii)}\ & F(r,0)=F\!\left(r,\tfrac{2\pi}{N}\right),
+\label{eq:bc12}\\
+\text{(iii)}\ & a\,F(r,0)=\frac{2}{r}\,\partial_\theta F\big|_{\theta=0}+b\,R(r),
+&\text{(iv)}\ & R(1)=0,
+\label{eq:bc4}
+\end{align}
+together with regularity at $r=0$. (Condition (iii) uses the reflection symmetry
+$-\partial_\theta F|_{2\pi/N}=\partial_\theta F|_{0}$.)
+
+Rather than the multiplicative trial $F=R(r)\Theta(\theta)$, we substitute the
+\textbf{additive ansatz}
+\begin{equation}
+\boxed{\,F(r,\theta)=A(r)+B(r)\,\Theta(\theta)\,}
+\label{eq:ansatz}
+\end{equation}
+into \eqref{eq:helm}. The motivation is empirical: the computed DL density is
+captured to four--digit energy accuracy by $g(r)+a(r)\cos N\theta$, a
+\emph{sum} of an angularly symmetric profile and a single $N$--fold modulation,
+not by any single product. The ansatz \eqref{eq:ansatz} is the natural analytic
+representative of that form, with $A\leftrightarrow g$ and
+$B\Theta\leftrightarrow a\cos N\theta$.
+
+\section{Substitution into the Helmholtz equation}
+
+The Laplacian acts linearly on the two pieces of \eqref{eq:ansatz}. Since $A$ is
+angle--independent,
+\begin{equation}
+\nabla^2 A=A''+\tfrac1r A',
+\qquad
+\nabla^2\!\bigl(B\Theta\bigr)
+=\Bigl(B''+\tfrac1r B'\Bigr)\Theta+\frac{1}{r^2}B\,\Theta''.
+\end{equation}
+Inserting into $-\sigma F=\nabla^2F$ and collecting terms,
+\begin{equation}
+\underbrace{\Bigl\{A''+\tfrac1r A'+\sigma A\Bigr\}}_{\text{angle-independent}}
++\underbrace{\Bigl\{B''+\tfrac1r B'+\sigma B\Bigr\}\Theta
++\frac{1}{r^2}\,B\,\Theta''}_{\text{angle-dependent}}=0 .
+\label{eq:collected}
+\end{equation}
+
+\paragraph{The angular factor is forced.} The bracketed angle--dependent part
+contains $\Theta(\theta)$ and $\Theta''(\theta)$. For \eqref{eq:collected} to
+hold at every $\theta$ with $r$ free, isolate the $\theta$--dependence: dividing
+the angle--dependent group by $B(r)$ and demanding it be a function of $\theta$
+that cancels against an $r$--only quantity gives the usual Sturm--Liouville
+separation,
+\begin{equation}
+\frac{\Theta''(\theta)}{\Theta(\theta)}=-\nu^2=\text{const},
+\qquad\Longrightarrow\qquad
+\Theta''+\nu^2\Theta=0 .
+\label{eq:angular}
+\end{equation}
+Equivalently: $1$ and $\Theta(\theta)$ are linearly independent functions of
+$\theta$ (as long as $\Theta$ is non--constant), so a relation of the form
+$c_1(r)\cdot 1+c_2(r)\,\Theta(\theta)+c_3(r)\,\Theta''(\theta)=0$ holding for all
+$\theta$ forces $\Theta''\propto\Theta$, i.e.\ \eqref{eq:angular}, and then forces
+each $r$--coefficient to vanish separately. This yields three decoupled
+ordinary differential equations.
+
+\paragraph{(a) Angular equation.}
+\begin{equation}
+\Theta''+\nu^2\Theta=0
+\quad\Longrightarrow\quad
+\Theta(\theta)=\alpha\cos\nu\theta+\beta\sin\nu\theta .
+\label{eq:Theta}
+\end{equation}
+
+\paragraph{(b) Mean channel (order $0$).} The angle--independent bracket of
+\eqref{eq:collected} must vanish on its own:
+\begin{equation}
+A''+\frac1r A'+\sigma A=0 .
+\label{eq:Aeq}
+\end{equation}
+This is \emph{Bessel's equation of order zero}. The solution regular at the
+origin is
+\begin{equation}
+A(r)=c_0\,J_0\!\bigl(\sqrt\sigma\,r\bigr).
+\label{eq:Asol}
+\end{equation}
+
+\paragraph{(c) Modulation channel (order $\nu$).} Using \eqref{eq:angular}, the
+coefficient of $\Theta$ in \eqref{eq:collected} must vanish:
+\begin{equation}
+B''+\frac1r B'+\Bigl(\sigma-\frac{\nu^2}{r^2}\Bigr)B=0 .
+\label{eq:Beq}
+\end{equation}
+This is \emph{Bessel's equation of order $\nu$}, with regular solution
+\begin{equation}
+B(r)=c_\nu\,J_\nu\!\bigl(\sqrt\sigma\,r\bigr).
+\label{eq:Bsol}
+\end{equation}
+
+\begin{quote}
+\textbf{Result of the substitution.} The additive ansatz solves the Helmholtz
+equation \emph{if and only if} $\Theta$ is an angular eigenfunction
+\eqref{eq:Theta} and $A,B$ are Bessel functions of orders $0$ and $\nu$ at one
+common $\sigma$:
+\[
+F(r,\theta)=c_0\,J_0\!\bigl(\sqrt\sigma\,r\bigr)
++c_\nu\,J_\nu\!\bigl(\sqrt\sigma\,r\bigr)\,\Theta(\theta).
+\]
+\end{quote}
+
+\section{What this ansatz actually is}
+
+Equation \eqref{eq:Asol}--\eqref{eq:Bsol} makes the status of the additive
+ansatz precise, and the conclusion is sobering: \textbf{it is not a
+generalization of separation of variables, it is a restriction of the full
+series to two angular harmonics.} Writing the angular ``mean'' factor as the
+$\nu=0$ eigenfunction (the constant $1$) and the modulation as the $\nu$
+eigenfunction, the ansatz is literally
+\begin{equation}
+F=\underbrace{c_0\,J_0(\sqrt\sigma r)\cdot 1}_{\nu=0\ \text{product mode}}
++\underbrace{c_\nu\,J_\nu(\sqrt\sigma r)\,\Theta(\theta)}_{\nu\ \text{product mode}},
+\end{equation}
+i.e.\ a sum of \emph{two} separable Helmholtz modes evaluated at the
+\emph{same} eigenvalue $\sigma$. It is the two--term truncation of the
+Fourier--Bessel double series written in the problem statement
+(Eqs.~(15)--(17) of \texttt{2d-problem.tex}).
+
+The one genuinely new object relative to a single product $R(r)\Theta(\theta)$
+is the \textbf{angular--mean channel} $A(r)=J_0(\sqrt\sigma r)$. Over the wedge,
+\[
+\frac{N}{2\pi}\int_0^{2\pi/N}\Theta(\theta)\,\rd\theta=0
+\quad\text{when }\nu=nN ,
+\]
+so $A(r)$ is exactly the angular average of $F$ and $B(r)\Theta(\theta)$ is the
+zero--mean fluctuation. This is the analytic content of the empirical
+decomposition: $A\leftrightarrow g(r)$ (the dominant symmetric profile) and
+$B\Theta\leftrightarrow a(r)\cos N\theta$ (the small modulation). The additive
+ansatz is therefore the \emph{right bookkeeping} for the numerics --- but, as the
+next section shows, it inherits the same fatal incompatibility as the product
+ansatz, and it makes the source of that incompatibility unusually visible.
+
+\section{Boundary conditions}
+
+\subsection{Outer absorbing condition (i): the channels disagree on $\sigma$}
+
+Condition (i) requires $F(1,\theta)=0$ for \emph{every} $\theta\in[0,2\pi/N]$.
+With \eqref{eq:ansatz},
+\begin{equation}
+A(1)+B(1)\,\Theta(\theta)=0\qquad\text{for all }\theta .
+\end{equation}
+Because $\Theta(\theta)$ is non--constant, this splits into \emph{two}
+independent Dirichlet conditions,
+\begin{equation}
+A(1)=0\quad\text{and}\quad B(1)=0,
+\end{equation}
+that is,
+\begin{equation}
+J_0\!\bigl(\sqrt\sigma\bigr)=0
+\qquad\text{and}\qquad
+J_\nu\!\bigl(\sqrt\sigma\bigr)=0 .
+\label{eq:bothzero}
+\end{equation}
+Each channel quantizes $\sigma$ on its own grid,
+\begin{equation}
+\text{mean channel:}\quad \sqrt\sigma\in\{\kappa_{0,j}\},
+\qquad
+\text{modulation channel:}\quad \sqrt\sigma\in\{\kappa_{\nu,k}\},
+\end{equation}
+where $\kappa_{m,\ell}$ is the $\ell$--th positive zero of $J_m$. For a single
+shared $\sigma$ with \emph{both} $c_0\neq0$ and $c_\nu\neq0$, \eqref{eq:bothzero}
+demands a \emph{common positive zero} of $J_0$ and $J_\nu$.
+
+\paragraph{Bourget's obstruction.} Bessel functions of the first kind of distinct
+integer orders share no positive zeros --- Bourget's hypothesis, proven by
+Siegel. (Here $\nu=nN$ with $n\geq1$ from periodicity, so the orders $0$ and
+$\nu$ are distinct integers.) Moreover, for real order all zeros of $J_\nu$ are
+real, so allowing complex $\sigma$ does not manufacture a coincidence either.
+Hence \eqref{eq:bothzero} has no solution with both channels active:
+\begin{equation}
+\boxed{\;\text{No exact additive eigenmode }A+B\Theta\text{ with }A,B\neq0
+\text{ exists.}\;}
+\end{equation}
+The angularly symmetric profile wants to decay at rate $\kappa_{0,j}^2$; the
+$N$--fold modulation wants to decay at rate $\kappa_{N,k}^2\neq\kappa_{0,j}^2$.
+A single exponential $e^{-\sigma t}$ cannot serve both.
+
+\paragraph{Why this is the useful part.} In
+\texttt{analytical\_attempt\_coupled\_DL\_AL.tex} the failure of separation was
+diagnosed at the MT condition (the explicit $2/r$ making the angular eigenvalue
+$r$--dependent, and $R\not\propto\rho$). The additive ansatz relocates the
+\emph{first} obstruction to the \emph{outer} boundary: the two channels are
+already incompatible at $r=1$, by Bourget, \emph{before} the microtubule physics
+is consulted. The incompatibility is thus not an artifact of the MT jump --- it
+is baked into the requirement that one decay rate govern both the mean and the
+modulation.
+
+\subsection{Periodicity (ii)}
+
+With $\Theta=\alpha\cos\nu\theta+\beta\sin\nu\theta$, condition (ii)
+$\Theta(0)=\Theta(2\pi/N)$ gives
+\begin{equation}
+\alpha\Bigl(1-\cos\tfrac{2\pi\nu}{N}\Bigr)=\beta\sin\tfrac{2\pi\nu}{N},
+\end{equation}
+the value--periodicity already discussed in the audit note. The smooth choice
+$\nu=nN$ satisfies it; this is what makes $0$ and $\nu$ distinct integer Bessel
+orders in \eqref{eq:bothzero} and locks in the Bourget obstruction.
+
+\subsection{Microtubule condition (iii): a second over-determination}
+
+Even setting aside \S4.1, condition (iii) cannot be met by \eqref{eq:ansatz} for
+a single $\sigma$. Because $R[\cdot]$ in \eqref{eq:RofF} is linear and
+$F(r,0)=A(r)+\Theta(0)B(r)$,
+\begin{equation}
+R(r)=R[A](r)+\Theta(0)\,R[B](r),
+\end{equation}
+and (iii) reads, for all $r\in[0,1]$,
+\begin{equation}
+\underbrace{a\,A-b\,R[A]}_{\text{mean part}}
++\Theta(0)\underbrace{\bigl(a\,B-b\,R[B]\bigr)}_{\text{modulation part}}
+=\frac{2\,\Theta'(0)}{r}\,B(r).
+\label{eq:bc3additive}
+\end{equation}
+The functions $\{A,\,R[A],\,B,\,R[B],\,B/r\}=\{J_0,\,R[J_0],\,J_\nu,\,R[J_\nu],\,
+J_\nu/r\}$ are linearly independent on $[0,1]$ --- $J_0$ and $J_\nu$ solve
+different--order Bessel equations, and $R[\,\cdot\,]$ carries the advective
+exponential $e^{(b-\sigma)r/v}$ which is neither. No choice of the finite
+parameter set $\{c_0,c_\nu,\alpha,\beta,\sigma\}$ makes the combination
+\eqref{eq:bc3additive} vanish identically in $r$. In particular the explicit
+$2/r$ on the right (the geometric coefficient inherited from the $1/r^2$ angular
+Laplacian and the $\delta(\theta-\theta_i)/r$ source) cannot be matched by the
+exponential/Bessel structure on the left at a single $\sigma$. This is the same
+$r$--dependent over--determination found for the product ansatz, now appearing as
+the failure to balance \eqref{eq:bc3additive}.
+
+\section{The resolution the ansatz points to}
+
+The additive ansatz is not a dead end --- it is the correct \emph{trial space},
+once we stop insisting on a single real $\sigma$. The two obstructions above say
+only that the mean and modulation channels cannot share a real Dirichlet--zero
+decay rate. Replace the eigenvalue $-\sigma$ by the Laplace variable $s$ and
+\emph{couple} the channels through the boundary data instead of through a shared
+Bessel zero:
+\begin{equation}
+F(r,\theta;s)=A(r;s)+B(r;s)\,\Theta(\theta),
+\end{equation}
+where $A$ solves the order--$0$ and $B$ the order--$\nu$ \emph{modified}--Bessel
+equation (argument $\sqrt s\,r$), each with its own radial Green's function, and
+the microtubule condition \eqref{eq:bc3additive} ties the two amplitudes
+together. Projecting \eqref{eq:bc3additive} onto the lowest radial profile of
+each channel collapses it to a $2\times2$ secular block
+\begin{equation}
+\det
+\begin{bmatrix}
+a\,p_{00}(s)-b\,q_{00}(s) & a\,p_{0N}(s)-b\,q_{0N}(s)\\[4pt]
+a\,p_{N0}(s)-b\,q_{N0}(s)-\dfrac{2N}{\,\cdot\,}\ell_N(s)
+& a\,p_{NN}(s)-b\,q_{NN}(s)
+\end{bmatrix}=0,
+\label{eq:2x2}
+\end{equation}
+whose slowest root $s_\star=-\sigma_\star$ is the leading (generally complex)
+decay rate. This is \emph{exactly} the two--mode reduction
+($n\in\{0,\pm1\}$, orders $0$ and $N$) derived in \S5 of
+\texttt{analytical\_attempt\_coupled\_DL\_AL.tex}. The additive ansatz is its
+analytic skeleton: the channel $A=J_0$ is the symmetric $g(r)$, the channel
+$B\Theta=J_N\cos N\theta$ is the modulation $a(r)\cos N\theta$, and the
+eigenvector of \eqref{eq:2x2} fixes the small amplitude ratio $c_\nu/c_0$ that
+the affine--overlap test measured numerically.
+
+\section{Summary}
+
+\begin{itemize}
+\item Substituting $F=A(r)+B(r)\Theta(\theta)$ into $-\sigma F=\nabla^2F$
+\emph{separates cleanly}: it forces $\Theta''+\nu^2\Theta=0$, sends $A$ to
+Bessel order $0$ ($A=J_0(\sqrt\sigma r)$) and $B$ to Bessel order $\nu$
+($B=J_\nu(\sqrt\sigma r)$), both at one common $\sigma$.
+\item Consequently the additive ansatz is \emph{not} more general than
+separation of variables; it is the two--term Fourier--Bessel sum (the $\nu=0$
+and $\nu$ modes). Its only new ingredient is the angular--mean channel
+$A=J_0$, the analytic counterpart of the numerically dominant $g(r)$.
+\item The outer absorbing condition (i) alone forces $J_0(\sqrt\sigma)=0$
+\emph{and} $J_\nu(\sqrt\sigma)=0$ --- a common positive zero of two
+distinct--order Bessel functions, which Bourget's theorem forbids. The mean
+channel and the modulation channel demand incompatible decay rates, so no exact
+single--$\sigma$ additive eigenmode exists.
+\item This relocates the obstruction to the \emph{outer} boundary, ahead of the
+MT condition; (iii) then over--determines a second time, since
+$\{J_0,R[J_0],J_\nu,R[J_\nu],J_\nu/r\}$ are independent in $r$ and cannot cancel
+at one $\sigma$.
+\item Relaxing ``single real $\sigma$'' to a Laplace variable $s$ keeps the
+additive structure and couples the two channels through the MT condition,
+yielding the $2\times2$ secular determinant \eqref{eq:2x2} --- precisely the
+working two--mode reduction. The additive ansatz is the right trial space for
+that reduction and reproduces the observed $g(r)+a(r)\cos N\theta$ form.
+\end{itemize}
+
+\noindent\textit{Honest status.} As with the product ansatz, the additive ansatz
+admits \emph{no} exact closed--form single--$\sigma$ eigenfunction; the
+obstruction is structural (two channels, two incompatible Bessel--zero spectra,
+tied by an $r$--dependent boundary functional). What it \emph{does} provide is
+the cleanest statement of \emph{why} --- Bourget incompatibility at $r=1$ --- and
+the correct two--channel basis $\{J_0,\,J_N\Theta\}$ for the resolvent/secular
+construction.
+
+\end{document}

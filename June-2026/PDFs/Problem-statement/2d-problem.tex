@@ -1,0 +1,584 @@
+\documentclass{article}
+\usepackage{empheq}
+\usepackage{float}
+\usepackage{epsfig}
+\usepackage{graphicx}
+\usepackage{textcomp}
+% \usepackctage{epstopdf}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[mathscr]{euscript}
+\usepackage[margin=1in]{geometry}
+\usepackage{framed}
+\usepackage{color}
+\usepackage{comment}
+\linespread{1.5}
+
+\title{Analytical attempt at the 2D problem}
+\author{Kevin Bedoya \and Oleg Kogan}
+\date{November 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Full problem recap}
+We have two layers - a disk-shaped continuous diffusive layer (DL) with radius $1$, and an advective layer (AL) consisting of discrete filaments or microtubules (MT), with inward-pointing advective velocity.  We will restrict ourselves here to highly symmetric situations, with angularly-symmetric initial conditions, and evenly-spaced advective filaments that meet at the center of the disk.  This invites the use of polar coordinates.
+\\
+\\
+Let $\phi(r,\theta,t)$ be the density on the DL, and $\rho_i(r,t)$ be the density on the $i$-th MT, each located at angle $\theta_i$.  The dynamics of these densities is given by
+\begin{eqnarray}
+\label{Eq:one} \frac{\partial \phi}{\partial t} &=& \nabla^2 \phi +\left(b \rho_i(r) - a \phi(r,\theta)\right)\sum_{i}\frac{1}{r}\delta(\theta - \theta_i) \\
+\label{eq:two} \frac{\partial \rho_i}{\partial t} &=& v \frac{\partial \rho_i}{\partial r} + a\phi(r,\theta_i) - b \rho_i(r)
+\end{eqnarray}
+(the dependence on $t$ was not explicitly stated to lighten the notation).  This will be derived in the Appendix, but for now, it's important to mention that parameter $a$ has dimensions of $distance/time$, and parameter $b$ has dimensions of $1/time$.  Also, here $D$ is set to $1$ (which amounts to a change of time units), and the radius of the disk is also set to $1$ (change of length units).  The sum of $\delta$-functions says that DL receives and loses mass to AL only at the angles and which the MTs are laid down.  
+
+The boundary conditions (BC)s are absorbing, meaning $\phi(r=1) = 0$ and $\rho(r=1) = 0$.  The initial condition (IC) will depend only on the radius (i.e. it is angularly-symmetric), and we will work primarily with a $\delta$-function IC on the DK, $\phi(t=0) = \delta(r)$, and $\rho(t=0) = 0$.
+
+\section{Mapping the problem to a wedge (sector).}
+While this formulation is correct, and it is what's used in discrete implementations in a PDE solver on a polar grid, working with $\delta$-functions is a pain.  We do know that for such symmetric IC: (i) the densities on all the MTs will be the same and (ii) the density on the DL will be periodic with period $\frac{2 \pi}{N}$, where $N$ is the number of MTs.  Even more specifically, the MTs divide the DL into wedges (or sectors), and $\phi$ will be periodic from sector to sector. Therefore, we want to reformulate the problem just to a sector.
+\\
+\\
+Consider a sector between $\theta_i$ and $\theta_{i+1}$ (and the sectors adjoint to it.  To extract BCs obeyed just by that sector, we integrate Eq.~(\ref{Eq:one}) through $\theta_i$:
+\begin{displaymath}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \frac{\partial \phi}{\partial t} \,d\theta = \int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \left(\nabla^2 \phi +\left(b \rho_i(r) - a \phi(r,\theta)\right)\sum_{i}\frac{1}{r}\delta(\theta - \theta_i)\right) \,d\theta
+\end{displaymath}
+On the left hand side (LHS), we have
+\begin{displaymath}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \frac{\partial \phi}{\partial t} \,d\theta  = \frac{\partial}{\partial t} \int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \phi(r,\theta,t)\,d\theta 
+\end{displaymath}
+Similar to my thinking (which proved to be correct) in 1D, the density on the DL will not contain $\delta$-function-like terms due to the diffusion operator;  in other words, all singular features in which there's a finite amount of mass concentrated in an infinitesimal amount of space are immediately smoothed out by diffusion.  Then the integral in the last expression will go to zero as $\epsilon \rightarrow 0$.  So the LHS is zero.
+\\
+\\
+Now on to the RHS. 
+\begin{eqnarray*}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} a \phi(r,\theta) \frac{1}{r}\delta(\theta - \theta_i) \,d\theta &=& \frac{a}{r} \phi(r,\theta_i) \\
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} b \rho_i(r) \frac{1}{r} \delta(\theta - \theta_i) \,d\theta &=& \frac{b}{r} \rho_i(r)
+\end{eqnarray*}
+Next, consider 
+\begin{displaymath}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \nabla^2 \phi  \,d\theta = \int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \left(\frac{\partial^2 \phi}{\partial r^2} + \frac{1}{r} \frac{\partial \phi}{\partial r} + \frac{1}{r^2}\frac{\partial^2 \phi}{\partial r^2} \right) \,d\theta
+\end{displaymath}
+The first term is 
+\begin{displaymath}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \frac{\partial^2 \phi}{\partial r^2} \,d\theta = \frac{\partial^2}{\partial r^2} \int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \phi(r,\theta,t) \,d\theta,
+\end{displaymath}
+and the integral goes to zero for the same reason as stated above, so this term is zero.  The same can be said for 
+\begin{displaymath}
+\int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \frac{1}{r}\frac{\partial \phi}{\partial r} \,d\theta = 0.
+\end{displaymath}
+Finally,
+\begin{displaymath}
+\frac{1}{r^2} \int_{\theta_i - \epsilon}^{\theta_i + \epsilon} \frac{\partial^2 \phi}{\partial \theta^2} \,d\theta = \frac{1}{r^2}\left(\left. \frac{\partial \phi}{\partial \theta} \right|_{\theta_i + \epsilon} - \left. \frac{\partial \phi}{\partial \theta} \right|_{\theta_i - \epsilon} \right).
+\end{displaymath}
+Now, because of the periodicity properties of $\phi$, this can be rewritten entirely in terms of $\phi$ within the wedge, without invoking $\phi$ at a neighbiring wedge.  Thus, the last term can be written as 
+\begin{displaymath}
+ \frac{1}{r^2}\left(\left. \frac{\partial \phi}{\partial \theta} \right|_{\theta_i + \epsilon} - \left. \frac{\partial \phi}{\partial \theta} \right|_{\theta_{i+1} - \epsilon} \right).
+\end{displaymath}
+So, the derivative here is evaluated just a little bit inward of the ``left'' side of the wedge, and just a little bit inward of the ``right'' side of the wedge.
+\\
+\\
+All put together, this integration through the angle $\theta_i$ has produced the following relationship:
+\begin{equation}
+\frac{a}{r} \phi(r,\theta_i)= \frac{1}{r^2}\left(\left. \frac{\partial \phi}{\partial \theta} \right|_L - \left. \frac{\partial \phi}{\partial \theta} \right|_R \right) + \frac{b}{r} \rho(r)
+\end{equation}
+I'm no longer putting a subscript under $\rho$ to emphasize that density profiles on all MTs are the same.   For the same reason, I called the locations at which the $\theta$-derivatives of $\phi$ are evaluated by letters ``L'' and ``R'' (left and right edges).  It makes it more compact, and avoids notational clutter.  
+\\
+\\
+What we have derived is in fact a new boundary condition for $\phi$ in the wedge.  The other BCs are: (i) $\rho(r=1) = 0$ and periodic BC $\phi(\theta) = \phi\left(\theta+\frac{2\pi}{N}\right)$.  If we commit to only modeling $\phi$ within the wedge, the last BC becomes $\phi(0) = \phi\left(\frac{2\pi}{N}\right)$.   In other words, we placed the left edge of the wedge at $\theta=0$ without loss of generality.
+\\
+\\
+Let's summarize now our restated problem.  
+\begin{eqnarray}
+\label{eq:one_new} \frac{\partial \phi}{\partial t} &=& \nabla^2 \phi, \\
+\label{eq:two_new} \frac{\partial \rho}{\partial t} &=& v \frac{\partial \rho}{\partial r} + a\phi(r,\theta =0) - b \rho(r),
+\end{eqnarray}
+The BCs are
+\begin{eqnarray}
+\phi(r=1) &=& 0  \\
+\phi(\theta=0) &=& \phi(\theta = \frac{2\pi}{N})  \\
+a \phi(r,\theta=0) &=& \frac{1}{r}\left(\left. \frac{\partial \phi}{\partial \theta} \right|_{\theta=0} - \left. \frac{\partial \phi}{\partial \theta} \right|_{\theta=\frac{2\pi}{N}} \right) + b \rho(r) \\
+\label{eq:BC4} \rho(r=1) &=& 0
+\end{eqnarray}
+The first and fourth are the absorbing BC for $\phi$ and $\rho$, the second is the periodic BC for $\phi$, and the third is the new BC.  Also, by symmetry, $-\left. \frac{\partial \phi}{\partial \theta} \right|_{\theta=\frac{2\pi}{N}} = \left. \frac{\partial \phi}{\partial \theta} \right|_{\theta=0}$, which will simplify the third BC.
+\\
+\\
+There's a two-way coupling. The AL density $\rho$ affects the DL density through the BCs on the edges.  On the other hand, the DL density affects AL density directly through the second term on the right.
+\\
+\\
+We are interested in eigenfunction expansion.  In other words, in functions of the form 
+\begin{equation}
+\left(\begin{array}{c} \phi \\ \rho \end{array}\right) = \left(\begin{array}{c} F(r,\theta) \\ R(r) \end{array}\right) e^{-\sigma t}.
+\end{equation}
+This is the same as separation of variables into spatial and temporal parts.  When this ansatz is substituted into the equations above, we get the following equation for eigenfunctions $(F,R)$:
+\begin{eqnarray}
+\label{eq:one_new} -\sigma F &=& \nabla^2 F \\
+\label{eq:two_new} -\sigma R &=& v \frac{d R}{d r} + aF(r,\theta=0) - b R(r)
+\end{eqnarray}
+With BCs:
+\begin{eqnarray}
+\label{eq:BC1} F(r=1) &=& 0  \\
+\label{eq:BC2} F(\theta=0) &=& F(\theta = \frac{2\pi}{N})  \\
+\label{eq:BC3} a F(r,\theta=0) &=& \frac{2}{r} \left. \frac{\partial F}{\partial \theta} \right|_{\theta=0}  + b R(r) \\
+\label{eq:BC4} R(r=1) &=& 0
+\end{eqnarray}
+
+\section{Attempts at solving this problem (newer)}
+\noindent Consider Eq.~(\ref{eq:one_new}) along with the first three BCs.  The term $b R(r)$ in the third BC, couples the DL to the AL.  At the same time, Eq.~(\ref{eq:two_new}) is coupled to the DL through the term $aF(r,\theta=0)$.  One exercise that we could perform, is to assume that $R(r)$ is a known function, solve for $F(r,\theta)$ in terms of this function (so, it would be a \emph{functional} of $R(r)$), plug it into the Eq.~(\ref{eq:two_new}), which now becomes a closed equation for $R(r)$.  Our attempts to do this are described below, but they have not been successful (see ``Gameplan'' below).
+\\
+\\
+An alternative approach is reverse - to solve Eq.~(\ref{eq:two_new}) for $R(r)$ as a \emph{functional} of the unknown $F(r,\theta=0)$, and then plug it into Eq.~(\ref{eq:BC3}), which, together with Eq.~(\ref{eq:one_new}) will now be a closed system for $F(r,\theta)$.  This should be easier to do, because Eq.~(\ref{eq:two_new}) is first order, and in one variable.  I will now attempt this approach.
+\\
+\\
+An equation of the type $\frac{dy}{dx} = \alpha y(x) + f(x)$ with $y(1)=0$ has a solution of the form
+\begin{displaymath}
+y(x) = e^{\alpha x}\int_1^x e^{-\alpha x'} f(x') \,dx'
+\end{displaymath}
+Applying this to Eq.~(\ref{eq:two_new}) we have
+\begin{displaymath}
+R(r) = -\frac{a}{v}e^{\frac{b-\sigma}{v} r}\int_1^r e^{-\frac{b-\sigma}{v} r'} F(r',\theta=0) \,dr'
+\end{displaymath}
+We have extracted everything from Eq.~(\ref{eq:two_new}) and the fourth BC.  We now have a closed problem for $F(r,\theta)$ only.  It obeys the Helmholtz equation $-\sigma F = \nabla^2 F$ with three BCs
+\begin{eqnarray}
+\label{eq:bc1} F(r=1) &=& 0  \\
+\label{eq:bc2} F(\theta=0) &=& F(\theta = \frac{2\pi}{N})  \\
+\label{eq:bc3} a F(r,\theta=0) - \frac{2}{r} \left.\frac{\partial F}{\partial \theta} \right|_{\theta=0} &=& -\frac{ab}{v}e^{\frac{b-\sigma}{v} r}\int_1^r e^{-\frac{b-\sigma}{v} r'} F(r',\theta=0) \,dr' 
+\end{eqnarray}
+We will attempt to solve the Helmholtz equation using the separation of variables $F(r,\theta) = \Phi(r)\Theta(\theta)$.  
+We have 
+\begin{displaymath}
+-\sigma \Phi(r)\Theta(\theta) = \Theta(\theta)\Phi_{rr}(r) + \frac{1}{r}\Phi_{r}(r)\Theta(\theta) + \frac{1}{r^2}\Phi(r)\Theta_{\theta \theta},
+\end{displaymath}
+or equivalently,
+\begin{displaymath}
+\sigma r^2 + r^2\frac{\Phi_{rr}}{\Phi} + r \frac{\Phi_r}{\Phi} = -\frac{\Theta_{\theta \theta}}{\Theta}
+\end{displaymath}
+This says that $\Theta_{\theta \theta} = - \mu^2 \theta$ and $\Phi_{rr} + \frac{1}{r} \Phi_r + \left(\sigma -\frac{\mu^2}{r^2} \right)\Phi  = 0$, where $\mu^2$ is some separation constant.  The $\Theta$-equation has a solution $\Theta = Ae^{i\mu \theta} + Be^{-i\mu \theta}$.  The $\Phi$-equation has a solution $J_{\mu}(\sqrt{\sigma} r)$ (we're not including the Neumann functions $Y$, because those diverge at the origin, and we're seeking a regular solution).  
+\\
+\\
+I will apply the first two boundary conditions to each eigenfunction.  In other words, 
+\begin{eqnarray}
+\label{eq:bc1} \Phi(r=1) &=& 0  \\
+\label{eq:bc2} \Theta(\theta=0) &=& \Theta\left(\theta = \frac{2\pi}{N}\right) 
+\end{eqnarray}
+Therefore, we will choose $\mu = nN$ to satisfy the secnd of these BCs.  The first BC says that $J_{nN}(\sqrt{\sigma}) = 0$. Let $\kappa_{n,j}$ denote the $j$-th positive root of the Bessel function $J_{nN}$, i.e. $J_{nN}(\kappa_{nN,j}) = 0$ with $j = 1,2,\dots.$
+Thus, $\sqrt{\sigma} = \kappa_{nN,j}$.  For each pair $(n,j)$, the corresponding radial basis function is therefore $\Phi_{n,j}(r)
+=J_{nN}\left(\kappa_{nN,j}r\right)$.  We note also that $J_n(x) = (-1)^nJ_{-n}(x)$ for integer $n$, and moreover $J_n(ax) = J_n(-ax)$.  Thus, a solution to $-\sigma F = \nabla^2 F$ that satisfy the first two boundary conditions is of the form $e^{i nN\theta}J_{nN}\bigl(\kappa_{nN,j} r\bigr)$, where $n \in\mathbb{Z}$.  
+\\
+\\
+We are left with the third BC:
+\begin{displaymath}
+\label{eq:bc3} a F(r,\theta=0) - \frac{2}{r} \left.\frac{\partial F}{\partial \theta} \right|_{\theta=0} = -\frac{ab}{v}e^{\frac{b-\kappa_{|n|N, j}^2}{v} r}\int_1^r e^{-\frac{b-\kappa_{|n|N, j}^2}{v} r'} F(r',\theta=0) \,dr' 
+\end{displaymath}
+We now substitute our eigenfunction $e^{i nN\theta}J_{nN}\bigl(\kappa_{nN,j} r\bigr)$ and get
+\begin{equation}
+\label{eq:thirdBC_long}
+\left(a  - \frac{2inN}{r} \right)J_{|n|N}(\kappa_{|n|N, j} r) + \frac{ab}{v}e^{\frac{b-\kappa_{|n|N, j}^2}{v} r}\int_1^r e^{-\frac{b-\kappa_{|n|N, j}^2}{v} r'} J_{|n|N}(\kappa_{|n|N, j} r') \,dr'  = 0
+\end{equation}
+And this should apply for each $(n,j)$ term.  My understanding of this is that it imposes the restriction on those $\kappa$s for which this expression evaluates to zero.  In other words, only those $\kappa$s that satisfy this criterion will enter the sum.  However, what bothers me is that the expression is a function of $r$.  So it's really that for some $n$ and $j$, the \emph{function} of $r$ on the left hand side should be zero. \textbf{If} this is possible, i.e. if there exist some select $\{n\}$ and $\{j\}$ for which this is true, then the general solution will be written as 
+\begin{equation}
+\phi(r,\theta,t) = \sum_{n', j'} C_{n', j'} e^{i n'N\theta}J_{n'N}\bigl(\kappa_{n'N,j'} r\bigr) e^{-\kappa^2_{n'N,j'} t}
+\end{equation}
+where $n'$ and $j'$ satisfy Eq.~(\ref{eq:thirdBC_long}).  Similarly,
+\begin{equation}
+R(r) = \sum_{n', j'} D_{n',j'}\left(e^{\frac{b-\kappa_{n'N,j'}^2}{v} r}\int_1^r e^{-\frac{b-\kappa_{n'N,j'}^2}{v} r'} J_{n'N}\bigl(\kappa_{n'N,j'} r'\bigr) \,dr'\right)e^{-\kappa^2_{n'N,j'} t}
+\end{equation}
+(I absorbed $\frac{a}{v}$ into $D$).  The coefficients $C$ and $D$ will come from initial conditions. 
+\newpage
+\section{(Older) gameplan}
+We exchanged the problem on a disk with $\delta$-functions, to a problem on a wedge, where the effect of the MTs has been rolled into a BC-3 for $\rhi$.  This is still a difficult problem, just expressed without the $\delta$-functions.  
+\\
+\\
+To tackle it, I propose the following gameplan.  We will first consider the following simpler problem.
+\begin{equation}
+-\sigma F &=& \nabla^2 F 
+\end{equation}
+with BCs: (i) $F(r=1) = 0$, (ii) $F(\theta=0) = F(\theta = \frac{2\pi}{N})$, (iii) $F(r,\theta=0) = f(r)$.  
+Thus, we are looking at uncoupled diffusion equation, which is driven at the boundaries by some \emph{specified} function of radius.  This is like the the simplified version of BC (Eq.~(\ref{eq:BC3})).  Once we understand how to solve this equation, i.e. how to express the solution in terms of a some generic $f(r)$ (which at this point is assumed \emph{given}), we will rewrite it in terms of the \emph{unknown} $R(r)$, and substitute the solution (that will be \emph{in principle} expressed in terms of $R(r)$ back into the $R$-equation with its own BC.  We also need to solve for $\sigma$.  My intuition is that $\sigma$ should be determined by \emph{both} equations, i.e. the solution to the $R$-equation, once the implicit solution for $F$ in terms of the unknown $R$ is substituted into its RHS, is only possible for specific, discrete set of $\sigma$s.
+Lastly, we will repeat the whole process with the $\theta$-derivatives included in the third BC.
+
+
+\section{An attempt to solve the simplified uncoupled problem}
+
+We seek separated solutions of the form
+\begin{equation}
+F(r,\theta) = R(r)\,\Theta(\theta).
+\label{eq:separation-ansatz}
+\end{equation}
+
+In polar coordinates, the Laplacian is
+\begin{equation}
+\Delta F = F_{rr} + \frac{1}{r}F_r + \frac{1}{r^2}F_{\theta\theta}.
+\label{eq:laplacian-polar}
+\end{equation}
+
+Substituting \eqref{eq:separation-ansatz} into \eqref{eq:laplacian-polar} gives
+\begin{equation}
+\Delta F
+= \Theta(\theta) R''(r)
++ \frac{1}{r}\Theta(\theta) R'(r)
++ \frac{1}{r^2} R(r)\Theta''(\theta).
+\end{equation}
+
+Dividing by \(R(r)\Theta(\theta)\) and multiplying by \(r^2\), we obtain
+\begin{equation}
+r^2 \frac{R''(r)}{R(r)}
++ r \frac{R'(r)}{R(r)}
++ \frac{\Theta''(\theta)}{\Theta(\theta)}.
+\label{eq:pre-separation}
+\end{equation}
+
+To obtain solutions in terms of Bessel functions, we consider the eigenvalue problem
+\begin{equation}
+\Delta F = -\sigma F,
+\label{eq:eigenvalue-problem}
+\end{equation}
+which yields
+\begin{equation}
+r^2 \frac{R''(r)}{R(r)}
++ r \frac{R'(r)}{R(r)}
++ \frac{\Theta''(\theta)}{\Theta(\theta)}
+= -\sigma r^2.
+\label{eq:separated-equation}
+\end{equation}
+
+Separating variables, we introduce a separation constant \(\mu \in \mathbb{R}\) and write
+\begin{equation}
+r^2 \frac{R''(r)}{R(r)}
++ r \frac{R'(r)}{R(r)}
++ \sigma r^2
+= -\frac{\Theta''(\theta)}{\Theta(\theta)}
+=: \mu.
+\label{eq:separation-constant}
+\end{equation}
+
+The angular equation is therefore
+\begin{equation}
+\Theta''(\theta) + \mu\,\Theta(\theta) = 0.
+\label{eq:angular-ode}
+\end{equation}
+
+For \(\mu > 0\), writing \(\sqrt{\mu}\) for the positive square root, the general solution is
+\begin{equation}
+\Theta(\theta)
+= A\,e^{-i\sqrt{\mu}\,\theta}
++ B\,e^{i\sqrt{\mu}\,\theta},
+\qquad A,B \in \mathbb{R}.
+\label{eq:angular-solution}
+\end{equation}
+
+The radial equation becomes
+\begin{equation}
+R''(r) + \frac{1}{r}R'(r)
++ \left(\sigma - \frac{\mu}{r^2}\right) R(r) = 0,
+\label{eq:radial-ode}
+\end{equation}
+which is Bessel’s equation of order \(\nu = \sqrt{\mu}\).
+Choosing the solution regular at \(r=0\), we obtain
+\begin{equation}
+R(r) = D\,J_{\sqrt{\mu}}\!\left(\sqrt{\sigma}\,r\right),
+\qquad D \in \mathbb{R}.
+\label{eq:radial-solution}
+\end{equation}
+
+\subsection*{\textbf{Angular boundary condition}}
+
+We impose the angular periodicity condition
+\begin{equation}
+F(0,r) = F\!\left(\frac{2\pi}{N}, r\right),
+\qquad N \in \mathbb{N}.
+\label{eq:angular-bc}
+\end{equation}
+
+From the separated form, this requires
+\begin{equation}
+\Theta(0) = \Theta\!\left(\frac{2\pi}{N}\right).
+\end{equation}
+
+Substituting \eqref{eq:angular-solution}, a sufficient condition for nontrivial solutions is
+\begin{equation}
+e^{\pm i\sqrt{\mu}(2\pi/N)} = 1,
+\end{equation}
+which holds if
+\begin{equation}
+\sqrt{\mu} = nN,
+\qquad n \in \mathbb{Z},
+\end{equation}
+so that
+\begin{equation}
+\mu = (nN)^2.
+\label{eq:mu-quantized}
+\end{equation}
+
+The angular eigenfunctions are therefore
+\begin{equation}
+\Theta_n(\theta)
+= A_n e^{i nN \theta}
++ B_n e^{-i nN \theta}.
+\label{eq:angular-modes}
+\end{equation}
+
+\subsection*{\textbf{Radial boundary condition}}
+
+Substituting \(\mu = (nN)^2\) into \eqref{eq:radial-solution}, the radial modes take the form
+\begin{equation}
+R_n(r)
+= D_n\,J_{nN}\!\left(\sqrt{\sigma}\,r\right).
+\label{eq:radial-modes}
+\end{equation}
+
+We now impose the boundary condition
+\begin{equation}
+F(\theta,1) = 0.
+\label{eq:radial-bc}
+\end{equation}
+
+For a fixed angular index \(n\), this implies
+\begin{equation}
+R_n(1) = 0,
+\end{equation}
+or equivalently
+\begin{equation}
+J_{nN}\!\left(\sqrt{\sigma}\right) = 0.
+\label{eq:bessel-zero-condition}
+\end{equation}
+
+Let \(\kappa_{n,j}\) denote the \(j\)-th positive zero of \(J_{nN}\), i.e.
+\[
+J_{nN}(\kappa_{n,j}) = 0,
+\qquad j = 1,2,\dots
+\]
+Then
+\begin{equation}
+\sigma_{n,j} = \kappa_{n,j}^2,
+\qquad n \in \mathbb{Z},\; j \in \mathbb{N}.
+\label{eq:eigenvalues}
+\end{equation}
+
+The corresponding radial eigenfunctions are
+\begin{equation}
+R_{n,j}(r)
+= D_{n,j}\,J_{nN}\!\left(\kappa_{n,j}\,r\right).
+\label{eq:final-radial-modes}
+\end{equation}
+
+
+
+\paragraph{Remark on the role of \(\sigma\).}
+The boundary condition at \(r=1\) does not pick out a single value of \(\sigma\); instead, it quantizes \(\sigma\) into a \emph{discrete spectrum} of eigenvalues
+\[
+\sigma_{n,j} = \kappa_{n,j}^{\,2},
+\]
+indexed by the angular mode \(n\) and the radial node index \(j\). In other words, \(\sigma\) plays the role of an eigenvalue, and the boundary value problem admits a family of eigenpairs \(\bigl(\sigma_{n,j}, F_{n,j}\bigr)\), where the radial part is built from
+\[
+J_{nN}\bigl(\kappa_{n,j} r\bigr)
+\]
+for all allowed orders \(nN\) and all zeros \(\kappa_{n,j}\) of the corresponding Bessel function. The full solution is then obtained as a superposition over all such modes \((n,j)\), rather than being associated with a single root for a fixed Bessel order.
+\\
+\\
+\color{blue}
+I find it very strange that $\sigma$s are determined just by the diffusive BC.  
+\color{black}
+
+\subsection*{Series representation of the solution}
+
+We now assemble the separated eigenfunctions into a full series solution. For each angular index 
+\(n = 0,1,2,\dots\) and radial index \(j = 1,2,\dots\), we have the separated mode
+\begin{align}
+F_{n,j}(r,\theta)
+&=
+\bigl(
+A_{n,j} \, e^{i nN\theta}
++
+B_{n,j} \, e^{-i nN\theta}
+\bigr)\,
+J_{nN}\bigl(\kappa_{nN,j} r\bigr), \tag{15)}
+\end{align}
+where \(\kappa_{nN,j}\) denotes the \(j\)-th positive zero of the Bessel function \(J_{nN}\). A general solution
+satisfying the homogeneous boundary conditions can then be written as the double series
+\begin{align}
+F(r,\theta)
+&=
+\sum_{n=-\infty}^{\infty}
+\sum_{j=1}^{\infty}
+\bigl(
+A_{n,j} \, e^{i nN\theta}
++
+B_{n,j} \, e^{-i nN\theta}
+\bigr)\,
+J_{nN}\bigl(\kappa_{nN,j} r\bigr). \tag{16)}
+\end{align}
+The coefficients \(A_{n,j}\) and \(B_{n,j}\) are determined by the remaining boundary condition
+\(F(\theta=0,r) = f(r)\) via an appropriate expansion of \(f\) in this eigenbasis.
+
+Note that $J_n(x) = (-1)^nJ_{-n}(x)$ for integer $n$. With this in mind, we can write the sum as 
+\begin{align}
+F(r,\theta)
+&=
+\sum_{n\in\mathbb{Z}}
+\sum_{j=1}^{\infty}
+C_{n,j}\,
+e^{i nN\theta}\,
+J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr). \tag{17)}
+\end{align}
+where \(\{C_{n,j}\}_{n\in\mathbb{Z},\, j\in\mathbb{N}}\) are some complex coefficients to be determined.  Here the dependence of the radial part on \(n\) enters only through the order \(|n|N\) of the Bessel
+function and its associated zeros \(\kappa_{|n|,j}\). 
+
+\subsection*{Third boundary condition}
+
+We now have to apply the third BC, i.e.\ fit
+\[
+F(r,\theta=0) = f(r).
+\]
+Note that \(F\bigl(r,\theta = \frac{2\pi}{N}\bigr) = f(r)\) will be automatically
+satisfied by the angular periodicity already built into the eigenfunctions.
+
+\medskip
+
+\noindent
+\textbf{Step 1: Start from the full series representation.}
+
+We use the complex exponential form of the separated solution:
+\begin{align}
+F(r,\theta)
+&=
+\sum_{n\in\mathbb{Z}}
+\sum_{j=1}^{\infty}
+C_{n,j}\,
+e^{i nN\theta}\,
+J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr), \tag{26)}
+\end{align}
+where \(\kappa_{|n|N,j}\) is the \(j\)-th positive zero of \(J_{|n|N}\).
+Evaluating at \(\theta=0\) gives
+\begin{align}
+F(r,0)
+&=
+\sum_{n\in\mathbb{Z}}
+\sum_{j=1}^{\infty}
+C_{n,j}\,
+J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr)
+=
+f(r). \tag{27)}
+\end{align}
+
+\newpage
+\section{Leftovers}
+\medskip
+
+\noindent
+\textbf{Step 2: Angular orthogonality (projection onto a fixed mode \(n\)).}
+
+To isolate a single angular mode, we multiply \eqref{26)} by
+\(e^{-i nN\theta}\) and integrate over one angular period
+\(\theta \in [0,2\pi/N]\):
+\begin{align}
+\int_0^{2\pi/N} F(r,\theta)\,e^{-i nN\theta}\,d\theta
+&=
+\sum_{m\in\mathbb{Z}}\sum_{j=1}^{\infty}
+C_{m,j}\,J_{|m|N}\bigl(\kappa_{|m|N,j} r\bigr)
+\int_0^{2\pi/N} e^{i (m-n)N\theta}\,d\theta. \tag{28)}
+\end{align}
+By orthogonality of the complex exponentials,
+\[
+\int_0^{2\pi/N} e^{i (m-n)N\theta}\,d\theta
+=
+\begin{cases}
+\dfrac{2\pi}{N}, & m=n,\\[0.4em]
+0, & m\neq n,
+\end{cases}
+\]
+so the sum over \(m\) collapses and we obtain
+\begin{align}
+\int_0^{2\pi/N} F(r,\theta)\,e^{-i nN\theta}\,d\theta
+&=
+\frac{2\pi}{N}
+\sum_{j=1}^{\infty}
+C_{n,j}\,J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr). \tag{29)}
+\end{align}
+Define the angular projection
+\begin{align}
+g_n(r)
+:=
+\frac{N}{2\pi}
+\int_0^{2\pi/N} F(r,\theta)\,e^{-i nN\theta}\,d\theta.
+\tag{30)}
+\end{align}
+Then, for each fixed \(n\in\mathbb{Z}\),
+\begin{align}
+g_n(r)
+&=
+\sum_{j=1}^{\infty}
+C_{n,j}\,J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr). \tag{31)}
+\end{align}
+
+\medskip
+
+\noindent
+\textbf{Step 3: Radial orthogonality (projection onto a fixed radial mode \(j\)).}
+
+For a fixed angular index \(n\) and a fixed radial index \(p\in\mathbb{N}\),
+multiply \eqref{31)} by \(r\,J_{|n|N}\bigl(\kappa_{|n|N,p} r\bigr)\) and integrate
+from \(0\) to \(1\):
+\begin{align}
+\int_0^1 r\,g_n(r)\,J_{|n|N}\bigl(\kappa_{|n|N,p} r\bigr)\,dr
+&=
+\sum_{j=1}^{\infty} C_{n,j}
+\int_0^1 r\,J_{|n|N}\bigl(\kappa_{|n|N,j} r\bigr)\,
+J_{|n|N}\bigl(\kappa_{|n|N,p} r\bigr)\,dr. \tag{32)}
+\end{align}
+Using the standard Bessel orthogonality relation
+\begin{align}
+\int_0^1 r\,J_{\nu}\bigl(\kappa_{\nu,j} r\bigr)\,
+J_{\nu}\bigl(\kappa_{\nu,p} r\bigr)\,dr
+&=
+\begin{cases}
+0, & j\neq p,\\[0.4em]
+\dfrac{1}{2}\,J_{\nu+1}\bigl(\kappa_{\nu,p}\bigr)^2, & j=p,
+\end{cases}
+\quad \nu = |n|N, \tag{33)}
+\end{align}
+only the term \(j=p\) survives in \eqref{32)}, giving
+\begin{align}
+\int_0^1 r\,g_n(r)\,J_{|n|N}\bigl(\kappa_{|n|N,p} r\bigr)\,dr
+&=
+C_{n,p}\,\frac{1}{2}\,
+J_{|n|N+1}\bigl(\kappa_{|n|N,p}\bigr)^2. \tag{34)}
+\end{align}
+Hence, for each \(n\in\mathbb{Z}\) and \(p\in\mathbb{N}\),
+\begin{align}
+C_{n,p}
+&=
+\frac{2}{J_{|n|N+1}\bigl(\kappa_{|n|N,p}\bigr)^2}
+\int_0^1 r\,g_n(r)\,J_{|n|N}\bigl(\kappa_{|n|N,p} r\bigr)\,dr. \tag{35)}
+\end{align}
+
+\medskip
+
+\noindent
+\textbf{Step 4: Expressing the coefficients in terms of the boundary data \(f(r)\).}
+
+The projection \(g_n(r)\) is defined from the full solution \(F(r,\theta)\) in
+\eqref{30)}. On the boundary ray \(\theta=0\), we are given
+\[
+F(r,0) = f(r).
+\]
+If the boundary data \(f\) is independent of \(\theta\) and we seek a solution
+with the same angular symmetry, then only the \(n=0\) mode is present:
+\[
+g_0(r) = f(r), \qquad g_n(r) \equiv 0 \text{ for } n\neq 0.
+\]
+In that case, the nonzero coefficients reduce to
+\begin{align}
+C_{0,p}
+&=
+\frac{2}{J_{1}\bigl(\kappa_{0,p}\bigr)^2}
+\int_0^1 r\,J_{0}\bigl(\kappa_{0,p} r\bigr)\,f(r)\,dr, \tag{36)}
+\end{align}
+and \(C_{n,p}=0\) for all \(n\neq 0\). More generally, if one is given boundary
+data \(f(r,\theta)\) along the full arc \(0\leq\theta\leq 2\pi/N\), the same
+procedure with \(g_n(r)\) defined by \eqref{30)} yields the coefficients
+\(C_{n,p}\) in terms of the angular Fourier–Bessel projections of \(f\).
+
+
+\end{document}
+

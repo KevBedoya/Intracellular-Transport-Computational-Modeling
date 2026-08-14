@@ -1,0 +1,345 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{color}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    showstringspaces=false
+}
+
+\title{Why the Gram--Cosine Separability Metric Misreads the Normalized
+Trajectories, and an Affine--Overlap Test for Detecting an Additive Term in
+the Ansatz}
+\author{Kevin Bedoya}
+
+\begin{document}
+
+\maketitle
+
+\section{Context and motivation}
+
+We test whether the computed diffusive--layer density admits the separable
+(product) form
+\begin{equation}
+\phi(r,\theta) = R(r)\,\Theta(\theta),
+\label{eq:sep}
+\end{equation}
+by analyzing the truncated density matrix $D\in\mathbb{R}^{(m-1)\times n}$
+(rows = radial rings, columns = angular rays; the absorbing ring at $r=1$ is
+dropped). The current diagnostics are: (i) column-normalized cosine
+similarity of the angular trajectories $A=D^{T}$ and radial trajectories
+$B=D$, summarized by the mean/maximum alignment errors
+\begin{equation}
+E_{\mathrm{mean}}=\frac{\bigl\||C|-1\bigr\|_{F}}{\sqrt{N}},
+\qquad
+E_{\max}=\max_{i,j}\bigl|\,|C_{ij}|-1\bigr|,
+\label{eq:Emetrics}
+\end{equation}
+and (ii) the rank-one energy ratio
+$\eta=\sigma_{1}^{2}/\sum_{k}\sigma_{k}^{2}$.
+
+Empirically these read as ``separable'' ($E_{\mathrm{mean}}\sim10^{-4}$,
+$\eta\approx0.9998$), yet when the normalized trajectories are plotted and
+overlaid they visibly fail to coincide: their \emph{shape} changes with the
+fixed coordinate. This report explains \emph{why} the metric and the plot
+disagree, and proposes a complementary test that not only quantifies the
+deviation in a magnitude-faithful way, but is specifically designed to
+distinguish a \textbf{multiplicative} ansatz~\eqref{eq:sep} from one carrying
+an \textbf{additive} term.
+
+\paragraph{Illustrative measurement.} A direct solver run
+($24\times24$ grid, $N=4$, $v=20$, $w=10$, $T=0.5$) gives the following,
+making the discrepancy explicit:
+\begin{lstlisting}
+Angular  E_mean = 8.08e-04   E_max = 2.24e-03
+Radial   E_mean = 3.31e-04   E_max = 8.50e-04
+Rank-1 energy ratio eta     = 0.99981   (1 - eta = 1.89e-04)
+--- but on the normalized overlay ---
+Angular worst |cos| = 0.99776 -> 3.83 deg, unit-L2 gap 0.067, max rel. spread 14.8%
+Radial  worst |cos| = 0.99915 -> 2.36 deg, unit-L2 gap 0.041, max rel. spread 16.9%
+(relative spread is ~3% on the high-magnitude inner rings,
+ ~17% on the low-magnitude outer rings near the absorbing boundary)
+\end{lstlisting}
+A scalar that reads $10^{-4}$ thus coexists with trajectories that disagree
+by $\sim17\%$ pointwise. The following four mechanisms account for this gap.
+
+\section{Why the cosine / rank-one diagnostics fail}
+
+\subsection{The inner product is magnitude-weighted (tail blindness)}
+
+For two trajectories $x,y$ (e.g.\ radial profiles at two angles) the cosine is
+\begin{equation}
+\cos(x,y)=\frac{\langle x,y\rangle}{\|x\|\,\|y\|}
+=\frac{\sum_{i}x_{i}y_{i}}{\|x\|\,\|y\|}.
+\end{equation}
+The sum is dominated by the samples where $x_{i}y_{i}$ is large, i.e.\ the
+high-density inner rings near the central source. The non-separable structure,
+however, lives in the low-density outer rings near the absorbing boundary.
+Write $y_{i}=R_{i}(1+\varepsilon_{i})$ with a \emph{relative} mismatch
+$\varepsilon_{i}$ concentrated where $R_{i}$ is small; then
+\begin{equation}
+\langle x,y\rangle - \langle x,x\rangle
+=\sum_{i}R_{i}^{2}\,\varepsilon_{i},
+\end{equation}
+and the contribution of the tail samples is suppressed by the factor
+$R_{i}^{2}\to0$. A large relative deviation in the tail moves the cosine
+essentially not at all. The eye, by contrast, reads the normalized curves on a
+common vertical scale and perceives the \emph{relative} disagreement across the
+whole domain, tail included. The metric and the plot are answering different
+questions.
+
+\subsection{Two layers of square-root / squared compression}
+
+Even where a deviation does register, it is compressed twice over.
+
+\emph{Cosine to geometric gap.} For unit-normalized trajectories
+$\widehat x,\widehat y$,
+\begin{equation}
+\|\widehat x-\widehat y\|_{2}^{2}=2\bigl(1-\cos(x,y)\bigr)
+\quad\Longrightarrow\quad
+\|\widehat x-\widehat y\|_{2}=\sqrt{2\bigl(1-\cos\bigr)}.
+\end{equation}
+Thus $\cos=0.99915$ corresponds to a unit-vector gap of $0.041$ and an angle of
+only $2.36^{\circ}$: a genuine separation is reported as a near-zero
+``error.''
+
+\emph{Energy versus amplitude in $\eta$.} The rank-one ratio uses
+\emph{squared} singular values, so it reports a residual \emph{energy}
+fraction
+\begin{equation}
+1-\eta=\frac{\sum_{k\ge2}\sigma_{k}^{2}}{\sum_{k}\sigma_{k}^{2}},
+\end{equation}
+whereas the relative \emph{amplitude} of the non-separable part is
+\begin{equation}
+\frac{\bigl\|D-\sigma_{1}u_{1}v_{1}^{T}\bigr\|_{F}}{\|D\|_{F}}
+=\sqrt{\,1-\eta\,}.
+\end{equation}
+For $\eta=0.99981$ this is $\sqrt{1.89\times10^{-4}}\approx0.014$, i.e.\ $1.4\%$
+in amplitude --- two orders of magnitude larger than ``$1-\eta$'' suggests, and
+larger still ($\sim17\%$) when measured pointwise relative to the local value.
+
+\subsection{Diagonal dilution and the absolute value}
+
+In~\eqref{eq:Emetrics} the normalization $N=C.\mathrm{size}=k^{2}$ for a
+$k\times k$ similarity matrix includes the $k$ diagonal entries, which are
+\emph{exactly} $1$, so $|C_{ii}|-1=0$ contributes $k$ hard zeros to the
+Frobenius mean and biases $E_{\mathrm{mean}}$ downward by the factor
+$\sqrt{1-1/k}$ (and, more importantly, dilutes the off-diagonal signal that
+actually carries the information). Taking $|C|$ also discards sign, hiding
+any anti-alignment. These are secondary to \S2.1--\S2.2 but compound them.
+
+\subsection{The deeper issue: the wrong hypothesis class}
+
+Column normalization $x\mapsto x/\|x\|$ is a \emph{homogeneous} (pure-scaling)
+map. Consequently the cosine similarity can only ever test the
+\emph{multiplicative / proportional} hypothesis
+\begin{equation}
+c_{j}=\alpha_{j}\,R ,
+\end{equation}
+i.e.\ that every trajectory is a scalar multiple of one reference profile. It
+is \emph{structurally incapable} of representing, and therefore of detecting,
+an additive offset. If the true field carries a term that is constant in $r$
+but varies with $\theta$ (or vice versa), normalization partially absorbs it
+and the cosine remains near unity. A high cosine therefore tells us nothing
+about whether the ansatz needs an additive component. To ask that question we
+must enlarge the transform group from \emph{scalings} to \emph{affine maps}
+(scaling \emph{plus} translation). The extra degree of freedom --- the
+translation --- is exactly what senses additivity, and is the subject of the
+next section.
+
+\section{Proposed approach: an affine--overlap test for additivity}
+
+\subsection{The two competing ansatz families}
+
+We wish to discriminate, from the numerics alone, between
+\begin{align}
+\text{(M) multiplicative:}\quad & \phi(r,\theta)=R(r)\,\Theta(\theta),
+& D&=R\,\Theta^{T} && (\operatorname{rank}1),\\
+\text{(A) additive:}\quad & \phi(r,\theta)=g(r)+h(\theta),
+& D&=g\,\mathbf 1_{n}^{T}+\mathbf 1_{m}h^{T} && (\operatorname{rank}\le2),\\
+\text{(M+A):}\quad & \phi(r,\theta)=R(r)\Theta(\theta)+g(r)+h(\theta),
+& D&=R\Theta^{T}+g\mathbf 1_{n}^{T}+\mathbf 1_{m}h^{T}. &&
+\end{align}
+The decisive observation is how an additive term acts \emph{column by column}.
+Fixing $\theta_{j}$ (one radial trajectory $c_{j}=D_{:,j}$):
+\begin{equation}
+\underbrace{c_{j}=\Theta_{j}\,R}_{\text{(M): scaling only}},
+\qquad
+\underbrace{c_{j}=\Theta_{j}\,R+h_{j}\,\mathbf 1_{m}+g}_{\text{(M+A)}}.
+\end{equation}
+An additive term $h(\theta)$ that is constant in $r$ appears as a
+\emph{column-dependent vertical offset} $h_{j}\mathbf 1_{m}$ on top of a scaled
+copy of the common shape $R$. This is precisely a per-column \textbf{affine}
+relationship, and it is invisible to the scaling-only cosine test.
+
+\subsection{Per-trajectory affine fit}
+
+Fix a reference radial shape $u$ (the leading left singular vector $u_{1}$ of
+$D$, or the highest-norm column). For each radial trajectory $c_{j}$ solve the
+two-parameter least-squares problem
+\begin{equation}
+(\alpha_{j},\beta_{j})
+=\arg\min_{\alpha,\beta}\;
+\bigl\|\,c_{j}-\alpha\,u-\beta\,\mathbf 1_{m}\,\bigr\|_{2}^{2},
+\label{eq:affine}
+\end{equation}
+with closed-form normal equations
+\begin{equation}
+\begin{bmatrix}
+\langle u,u\rangle & \langle u,\mathbf 1\rangle\\[2pt]
+\langle u,\mathbf 1\rangle & m
+\end{bmatrix}
+\begin{bmatrix}\alpha_{j}\\[2pt]\beta_{j}\end{bmatrix}
+=
+\begin{bmatrix}\langle u,c_{j}\rangle\\[2pt]\langle\mathbf 1,c_{j}\rangle\end{bmatrix}.
+\end{equation}
+We deliberately \textbf{do not force the trajectories to coincide}; we
+\emph{fit} the affine map and then ask whether the offset $\beta_{j}$ was
+\emph{needed}. Compare two nested residuals,
+\begin{equation}
+S^{\mathrm{mult}}_{j}=\min_{\alpha}\|c_{j}-\alpha u\|^{2}
+=\|c_{j}\|^{2}-\frac{\langle u,c_{j}\rangle^{2}}{\|u\|^{2}},
+\qquad
+S^{\mathrm{aff}}_{j}=\bigl\|c_{j}-\alpha_{j}u-\beta_{j}\mathbf 1\bigr\|^{2},
+\end{equation}
+and report the \emph{offset improvement}
+\begin{equation}
+\Delta_{j}=\frac{S^{\mathrm{mult}}_{j}-S^{\mathrm{aff}}_{j}}
+{S^{\mathrm{mult}}_{j}}\in[0,1].
+\label{eq:improvement}
+\end{equation}
+The symmetric test is performed on the rows (angular trajectories
+$\rho_{i}=D_{i,:}$) against a reference angular shape $w=v_{1}$, yielding
+offsets $b_{i}$ and improvements analogous to~\eqref{eq:improvement}; a needed
+$b_{i}$ signals an additive $g(r)$.
+
+\paragraph{Decision rule.}
+\begin{center}
+\begin{tabular}{l l l}
+\hline
+$\beta_{j}\approx0$, $\Delta_{j}\approx0$ & offset not needed & multiplicative (M) \\
+$\beta_{j}\neq0$, $\Delta_{j}$ large, $\alpha_{j}$ small/constant & offset dominates & additive (A) \\
+$\beta_{j}\neq0$ and $\alpha_{j}$ both structured & both needed & product $+$ additive (M+A) \\
+\hline
+\end{tabular}
+\end{center}
+Crucially, one inspects whether $\beta_{j}$ (resp.\ $b_{i}$) varies
+\emph{smoothly and systematically} with $\theta_{j}$ (resp.\ $r_{i}$): a
+structured offset is a recovered estimate of $h(\theta)$ (resp.\ $g(r)$),
+not fitting noise.
+
+\subsection{Two equivalent viewpoints (sanity checks)}
+
+\paragraph{(i) Affine cosine is Pearson correlation.} Minimizing over the
+offset $\beta$ in~\eqref{eq:affine} is identical to \emph{mean-centering} both
+$c_{j}$ and $u$ before measuring proportionality. Hence the scale-free scalar
+summary of the affine fit is the Pearson correlation
+\begin{equation}
+\rho(c_{j},u)=
+\frac{\langle c_{j}-\bar c_{j}\mathbf 1,\;u-\bar u\mathbf 1\rangle}
+{\|c_{j}-\bar c_{j}\mathbf 1\|\;\|u-\bar u\mathbf 1\|},
+\end{equation}
+i.e.\ the \emph{centered} cosine. The diagnostic for additivity is the
+\emph{gap} between the raw (uncentered) cosine and the Pearson correlation:
+if centering markedly improves the alignment, an additive offset is present.
+This is a one-line addition to the existing pipeline.
+
+\paragraph{(ii) Global two-way (ANOVA / AMMI) decomposition.} The per-trajectory
+picture is the local face of the global model
+\begin{equation}
+D_{ij}=\underbrace{c+g_{i}+h_{j}}_{\text{additive part}}
++\underbrace{R_{i}\Theta_{j}}_{\text{multiplicative interaction}}
++\varepsilon_{ij}.
+\label{eq:ammi}
+\end{equation}
+Fit the additive part by the classical two-way means
+$\widehat c+\widehat g_{i}+\widehat h_{j}
+=\bar D_{i\cdot}+\bar D_{\cdot j}-\bar D$, subtract it, and take the SVD of the
+residual \emph{interaction} matrix $E_{ij}$. Then:
+\begin{itemize}
+\item additive part negligible, $E$ rank-one and dominant
+$\;\Rightarrow\;$ pure multiplicative (M);
+\item additive part dominant, $E$ negligible
+$\;\Rightarrow\;$ pure additive (A);
+\item both sizeable, $E$ rank-one
+$\;\Rightarrow\;$ product $+$ additive (M+A), with $R,\Theta$ read off from the
+leading singular triple of $E$.
+\end{itemize}
+This is exactly Tukey's ``one degree of freedom for non-additivity'' / the AMMI
+model, and it gives a clean energy budget: the fraction of $\|D\|_{F}^{2}$
+carried by the additive part versus the rank-one interaction directly answers
+``is there an additive term?''
+
+\subsection{Identifiability and pitfalls}
+\begin{itemize}
+\item \textbf{Reference must not be constant.} If $u\propto\mathbf 1$ the columns
+$\{u,\mathbf 1\}$ are collinear and $\beta_{j}$ is unidentifiable. Check
+$\langle u,\mathbf 1\rangle^{2}<\|u\|^{2}m$ (strict) before fitting; near the
+fully relaxed $J_{0}$ regime $u$ flattens and this guard matters.
+\item \textbf{Gauge freedom.} In~\eqref{eq:ammi} a constant can move freely
+between $c$, $g$, and $h$. Fix the gauge (e.g.\ $\sum_i g_i=\sum_j h_j=0$) so
+the recovered $g,h$ are comparable across runs.
+\item \textbf{Do not normalize first.} The additivity signal lives in the
+offset; column-normalizing (as the cosine pipeline does) destroys it. The
+affine fit must run on the \emph{raw} $D$.
+\item \textbf{Report amplitude, not energy.} Quote $\sqrt{1-\eta}$ and the
+max pointwise relative residual alongside any $\eta$ or $E_{\mathrm{mean}}$,
+so the scalar tracks the plot.
+\end{itemize}
+
+\subsection{Connection to the analytic expansion}
+
+The eigenfunction expansion already derived,
+\begin{equation}
+\phi(r,\theta,t)=\sum_{n\in\mathbb{Z}}\sum_{j}
+C_{n,j}\,e^{inN\theta}\,J_{|n|N}\!\bigl(\kappa_{|n|N,j}r\bigr)
+\,e^{-\kappa^{2}_{|n|N,j}t},
+\end{equation}
+makes the additive-versus-multiplicative question physical. Group the sum as
+\begin{equation}
+\phi(r,\theta,t)=\underbrace{f_{0}(r,t)}_{n=0\ \text{mode}}
++\sum_{n\neq0}e^{inN\theta}f_{n}(r,t),
+\end{equation}
+where $f_{0}(r,t)=\sum_{j}C_{0,j}J_{0}(\kappa_{0,j}r)e^{-\kappa_{0,j}^{2}t}$ is
+\emph{angularly constant}: it is precisely an additive radial term $g(r)$
+sitting beneath the angular ($n\neq0$) modes. Hence
+\begin{itemize}
+\item if a single $n\neq0$ product mode dominates the remainder, the field is
+well described by $\phi\approx g(r)+R(r)\Theta(\theta)$ --- the (M+A) class,
+and the affine offsets $\beta_{j}$ recover $g(r)$;
+\item if the $n=0$ mode alone survives (the fully relaxed, angularly symmetric
+limit), the field is genuinely separable \emph{and} $\theta$-independent, and
+both the cosine test and the affine test agree.
+\end{itemize}
+The proposed affine-overlap test therefore does more than fix a metric: it
+measures the relative weight of the angularly symmetric ($n=0$) component
+against the angular product modes, i.e.\ it reads off which terms of the
+analytic ansatz the numerics actually support.
+
+\section{Recommended reporting}
+
+For each solver snapshot, alongside the existing $E_{\mathrm{mean}}$,
+$E_{\max}$, and $\eta$, report:
+\begin{enumerate}
+\item the amplitude residual $\sqrt{1-\eta}$ and the maximum \emph{pointwise
+relative} residual of the rank-one reconstruction (magnitude-faithful
+deviation);
+\item the per-trajectory affine offsets $\{\beta_{j}\}$, $\{b_{i}\}$ and the
+offset-improvement $\Delta$ of~\eqref{eq:improvement}, for both radial and
+angular trajectories;
+\item the raw-cosine vs.\ Pearson-correlation gap (the scalar additivity
+signal);
+\item the AMMI energy budget: fraction of $\|D\|_{F}^{2}$ in the additive part
+versus the leading interaction mode.
+\end{enumerate}
+Together these distinguish (M), (A), and (M+A) and supply the functional-form
+ansatz directly from the numerical density.
+
+\end{document}

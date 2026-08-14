@@ -1,0 +1,174 @@
+\documentclass{article}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{color}
+
+\newcommand{\rd}{\mathrm{d}}
+
+\title{Peer Review\\[2pt]
+\large\emph{Derivation of the Analytic Solution of the Coupled DL--AL Problem
+via the Time--Laplace / Resolvent Construction}}
+\author{Referee report}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Recommendation}
+\textbf{Major revision.} The overall strategy (Laplace transform $\to$ resolvent
+$\to$ pole spectrum) is correct and well motivated, the algebra I checked is
+sound, and the validation section is commendably honest. However, there is a
+substantive disconnect between the construction \emph{derived} (Secs.~5--8) and
+the one actually \emph{validated} (Sec.~9), together with an internal
+inconsistency in the pole/residue bookkeeping that bears directly on the central
+``analytic solution'' claim. Both are fixable, largely by reframing rather than
+re-deriving.
+
+\section{Summary of the manuscript}
+The paper studies a coupled diffusive--layer (DL) / advective--layer (AL) system
+on the unit disk with $N$ evenly spaced microtubules. It (i) Laplace--transforms
+in time and eliminates the AL density exactly as a linear functional of the DL
+trace on a microtubule ray; (ii) rewrites the microtubule sources as a Dirac comb
+so they feed every angular harmonic; (iii) constructs a closed modified--Bessel
+radial Green's function; (iv) closes the problem into a Fredholm equation of the
+second kind whose secular determinant $\det(\mathcal I + \mathcal A(s))=0$ yields
+the (complex) decay rates; (v) inverts by the Bromwich contour to a modal
+residue series; and (vi) gives a two--mode truncation and a numerical validation
+against a finite--difference solver across the $(v,w)$ parameter plane.
+
+\section{Strengths}
+\begin{itemize}[leftmargin=1.4em]
+\item The motivation for a resolvent (rather than eigenfunction) construction on a
+non--self--adjoint operator (Sec.~1) is correct and clearly argued.
+\item The exact AL elimination [Eq.~(6)] is clean and correct.
+\item The Dirac--comb, full--disk reformulation (Sec.~3) is elegant and is the
+right way to dissolve the apparent ``extra boundary condition'' / cusp paradox of
+the single--wedge treatment.
+\item The radial Green's function [Eq.~(13)] is correct; I verified the Abel
+constant and the central--$\delta$ collapse to the closed form [Eq.~(15)].
+\item The modal--amplitude formula [Eq.~(22)] via a biorthogonal projection is
+correct, and its reduction to the classical Fourier--Bessel coefficient in the
+uncoupled limit (Sec.~7 sanity check) is convincing.
+\item The validation (Sec.~9) is transparent and, unusually, reports a regime in
+which the method fails rather than only its successes.
+\end{itemize}
+
+\section{Major concerns}
+
+\paragraph{M1. The derived object (Secs.~5--8) is not the object validated
+(Sec.~9).}
+Sections 5--8 present the analytic solution as the resolvent / secular determinant
+$\det(\mathcal I + \mathcal A(s)) = 0$, which is a \emph{nonlinear} eigenvalue
+problem: $\mathcal A$ depends on $s$ through both the Green's kernel and the AL
+functional. Section 9, however, states that the modes are obtained by writing the
+coupled operator in the Bessel basis and \emph{diagonalizing} it --- an ordinary,
+$s$--independent (generalized) eigenproblem for the generator. These are related
+but not identical constructions, and the manuscript silently substitutes one for
+the other while continuing to cite Eqs.~(24)--(25) as though they were what is
+computed. The paper should either (a) prove the equivalence (generator
+eigenvalues $=$ roots of $\det(\mathcal I+\mathcal A(s))=0$), or, preferably,
+(b) promote the generator eigenproblem to the primary construction --- it is what
+actually runs and is validated --- and present the resolvent/secular determinant
+as motivation. As written, Sec.~9 cannot be reproduced from Secs.~5--8.
+
+\paragraph{M2. The ``subdominant $\Phi_0$'' argument (Sec.~6) is internally
+inconsistent and contradicts Sec.~9.}
+In assembling the residue series, the manuscript discards the forced--response
+residue family at the bare poles $s=-\kappa_{0,j}^2$, describing it as a
+``diffusive--background residue family \dots\ which we suppress here as
+subdominant.'' But the slowest bare pole, $-\kappa_{0,1}^2\approx-5.78$, is the
+\emph{most} dominant (slowest--decaying) contribution, not a subdominant one.
+Moreover, the dominant decay rate reported throughout Sec.~9 is
+$\sigma\approx 5.0\text{--}5.8$ --- i.e.\ precisely the (perturbed) $n=0$ pole that
+Sec.~6 suppresses. The text must resolve whether the bare pole is (a) removable in
+$(\mathcal I+\mathcal A)^{-1}\Phi_0$, (b) shifted by the coupling (as claimed near
+Eq.~(13)), or (c) a genuinely separate contribution; at present all three are
+asserted at different points. This is the single most important rigor gap, since
+it concerns which poles constitute ``the spectrum.''
+
+\paragraph{M3. The ``truncation breakdown'' diagnosis is asserted, not
+demonstrated.}
+For the failing regime $v=100,\ w=100$ (predicted $\sigma=11.34$ vs.\ numerical
+$3.40$; mass MSE $\sim10^{-1}$), the paper attributes the disagreement to a
+too--coarse few--mode truncation together with first--order discretization
+effects. No convergence evidence is given: it is never shown that increasing the
+number of radial/angular modes (or refining the grid) reduces the error
+monotonically. Without such a study the failure could equally reflect a genuine
+model mismatch. A mode--count and grid--refinement convergence panel for this
+regime should be added before the ``truncation'' explanation can be accepted.
+
+\paragraph{M4. The validated equations are not the continuum equations of
+Secs.~1--2.}
+Section 9 concedes that the analytic operator is supplied with the discrete
+scheme's coupling, $a \to a\,r\,\Delta\theta$ --- a grid--dependent weight with
+\emph{no continuum limit}. Consequently Sec.~9 validates the analytic solution of
+a grid--modified system, not the continuum problem derived in Secs.~1--8. This
+caveat should be stated at the \emph{opening} of Sec.~9 (and reflected in the
+abstract), not introduced midway. Relatedly, the phrase ``depend \emph{mildly} on
+the grid'' understates the effect: the paper's own refinement data move $\sigma$
+by roughly $25\%$ ($\approx4.2\to5.2$) over $16\to48$ rings. ``Mildly'' should be
+removed or quantified.
+
+\paragraph{M5. Non--self--adjoint completeness is assumed silently.}
+The modal series [Eq.~(24)] presumes simple poles, the absence of Jordan blocks,
+and completeness of the biorthogonal family $\{\psi_k\}$. For a non--self--adjoint
+operator none of these is automatic. At minimum the manuscript should add an
+explicit caveat; ideally it should argue (or cite) why the expansion is complete
+for this operator.
+
+\section{Minor concerns}
+\begin{enumerate}[leftmargin=1.6em,label=m\arabic*.]
+\item \textbf{Notation clash.} $a$ denotes the on--rate throughout, yet Eq.~(27)
+writes the angular--modulation amplitude as $a(r)$. Rename the amplitude (e.g.\
+$\alpha(r)$) to avoid collision with the coupling rate.
+\item \textbf{Addition--theorem hand--wave (Eq.~(18)).} The remark that the
+ray--summed kernel ``is the image--corrected $\tfrac{1}{2\pi}K_0(\sqrt s|\mathbf
+r-\mathbf r'|)$'' is loose: the sum runs over orders $nN$ (not all $n$), and the
+disk Dirichlet correction is not the free--space $K_0$. Either derive the image
+series or delete the parenthetical and retain $\mathcal S$ as the mode sum.
+\item \textbf{Undefined block structure.} In the $2\times2$ truncation [Eq.~(30)],
+$\mathcal S_{mn}$ is called ``the $(m,n)$ angular block of $\mathcal S$,'' but
+$\mathcal S$ [Eq.~(18)] is defined as a single angle--summed scalar kernel with no
+$(m,n)$ block structure. The projection producing $p_{mn},q_{mn}$ is asserted
+rather than derived.
+\item \textbf{Sign of $v$.} The continuum AL equation uses $+v\,\partial_r\rho$;
+the physical (inward) direction and the sign convention for $v$ are never fixed.
+State them explicitly (the companion solver negates the velocity input).
+\item \textbf{Branch cut.} The dismissal of the $\sqrt s$ cut (Sec.~6) is correct
+for a bounded domain but would be clearer with a one--line note that
+$\Phi_0,\mathcal K_m$ are even in $\sqrt s$ and hence meromorphic in $s$.
+\item \textbf{Title.} Given that the secular roots are only obtained numerically
+and the validated object is grid--modified, ``Derivation of the Analytic
+Solution'' slightly oversells; ``A resolvent construction\dots'' or
+``semi--analytic'' would be more accurate.
+\item \textbf{Reproducibility.} The exact \texttt{deterministic\_verification}
+invocation (parameters, mode counts, time stamps) that produced Table~1 should be
+recorded for the notes' own future use.
+\end{enumerate}
+
+\section{Questions to the authors}
+\begin{enumerate}[leftmargin=1.6em]
+\item Are the generator eigenvalues of Sec.~9 provably the roots of
+$\det(\mathcal I+\mathcal A(s))=0$ of Sec.~5? If so, the equivalence should be
+shown; if not, which set constitutes the physical spectrum?
+\item Does refining the mode counts $n_{\max},J_r$ and the grid reduce the
+$v=100,\ w=100$ error monotonically?
+\item Since the dominant root $s_k$ lies near a bare pole $-\kappa_{0,1}^2$, is the
+kernel $\mathcal K_0(\,\cdot\,;s_k)$ not nearly singular there? How is this handled
+numerically in the reconstruction [Eq.~(24)]?
+\end{enumerate}
+
+\section{Assessment}
+The physical model and the bulk of the algebra are correct, the comb
+reformulation is a genuine contribution, and the honest validation (including a
+failing regime) is a real asset. The required revisions are primarily about
+\emph{coherence}: align the derived construction (Secs.~5--8) with the validated
+one (Sec.~9) [M1], repair the pole/residue bookkeeping [M2], and foreground the
+fact that the validated system is the grid--modified one [M4]. The one outstanding
+\emph{empirical} task is a convergence study for the failing regime [M3]. With
+these addressed, the manuscript would constitute a sound and useful account of the
+coupled DL--AL problem.
+
+\end{document}
