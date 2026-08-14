@@ -976,6 +976,19 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     t2_ = num.compute_K(rg_param, ry_param, x2)
     t2 = num.closest_multiple(t2_, MA_collection_factor) // MA_collection_factor
 
+    # Pre-flight bounds check (cheap, runs before any solving).
+    # t1 / t2 are the log-fit sample indices into MA_*_timeseries, which has
+    # relative_k entries.  Because x1 / x2 are fixed at 0.4 / 0.5 above, this
+    # function silently requires T_param > x2; otherwise the fit below would
+    # index past the end of the series.  Validating here means a bad parameter
+    # set fails immediately instead of after the full time-stepping loop.
+    if not (0 <= t1 < relative_k and 0 <= t2 < relative_k):
+        raise ValueError(
+            f"characteristic-time fit indices out of range: "
+            f"t1={t1}, t2={t2}, valid range [0, {relative_k}). "
+            f"The fit window is hard-coded at x1={x1}, x2={x2}, so T_param "
+            f"must exceed {x2} (got T_param={T_param}).")
+
     for v_param in v_LIST:
 
         D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
@@ -1007,7 +1020,25 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
         k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
         k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
 
-        m_star = MA_TM_timeseries[k_star]
+        # Guard the k_star lookup.
+        # k_star is derived from the *fitted* t_star, so it cannot be validated
+        # before the solve.  A degenerate fit (t_star non-finite, non-positive,
+        # or large enough that 10 * t_star exceeds T_param) would index outside
+        # MA_TM_timeseries and raise a bare IndexError only after the entire
+        # time-stepping loop has finished -- discarding hours of computation for
+        # a one-line lookup.  Instead, record m_star as NaN and report loudly:
+        # t_star is unaffected and is still written to the CSV.
+        if (not np.isfinite(t_star)) or t_star <= 0 or not (0 <= k_star < relative_k):
+            print("*** WARNING: degenerate characteristic-time fit ***")
+            print(f"    v          = {v_param}")
+            print(f"    t_star     = {t_star}")
+            print(f"    k_star     = {k_star}  (valid range [0, {relative_k}))")
+            print(f"    m_star requires 10 * t_star < T_param; "
+                  f"here T_param={T_param} and 10 * t_star={10 * t_star}")
+            print("    recording m_star = NaN; t_star is still reported.")
+            m_star = np.nan
+        else:
+            m_star = MA_TM_timeseries[k_star]
         m_star_dict[v_param] = m_star
 
     v_axis = list(m_star_dict.keys())

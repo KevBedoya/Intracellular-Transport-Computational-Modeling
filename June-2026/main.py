@@ -80,6 +80,151 @@ def run_verification_examples():
         ab.deterministic_verification(**cfg)
 
 
+# ---------------------------------------------------------------------------
+# Concurrent characteristic-time sweep (96x96)
+# ---------------------------------------------------------------------------
+# WHY THESE JOBS RUN AS SEPARATE CONCURRENT PROCESSES
+#
+# The four microtubule configurations (24 / 16 / 8 / 4 tubes) are completely
+# independent of one another: they share no state, and each writes its results
+# into its own timestamp-stamped directory under
+# ``data_output/char_time_analysis/``.  Running them concurrently is therefore
+# safe and is a straight ~4x wall-clock win, for three measured reasons:
+#
+# 1. The solver is single-threaded.  ``comp_mass_analysis_respect_to_time`` is
+#    an ``@njit`` function with a serial time-stepping loop; the running process
+#    was measured at 0.99 cores busy (322 CPU-sec / 324 wall-sec).  This machine
+#    has 12 logical cores, so a sequential sweep leaves 11 of them idle.
+#
+# 2. The jobs are near-identical in cost, so they finish together.  ``K`` (the
+#    number of timesteps) depends only on the grid and ``T``, not on the number
+#    of microtubules -- so all four jobs run the same 43,028,399 steps.  Tube
+#    count only affects the advective inner work, measured as a ~4% effect
+#    (slowest/fastest = 1.04x).  There is no long-tail straggler.
+#
+# 3. Separate processes fix a figure-reuse bug.  ``collect_char_time_mass``
+#    calls ``plt.scatter`` but never ``plt.clf()``/``plt.close()``.  Run
+#    sequentially in ONE process, each job's PNG accumulates every previous
+#    job's scatter points (job 4's plot would show 4 points instead of 1).  The
+#    CSVs are unaffected because they are rebuilt per job.  Giving each job its
+#    own process gives it its own matplotlib figure, so each PNG contains only
+#    its own data.
+#
+# Measured cost: ~10.7 hr per job, so ~43 hr sequential vs ~10.7 hr concurrent.
+# Each child JIT-compiles independently (~30 s), which overlaps across workers.
+# ---------------------------------------------------------------------------
+
+# One source of truth for the sweep, shared by the workers and the docs above.
+CHAR_TIME_SWEEP = dict(
+    rings=96,
+    rays=96,
+    v_list=[10 ** 4],
+    w=100,          # switch rate (a = b = w)
+    T=1,            # dimensionless solution duration
+)
+
+# Microtubule counts to sweep, one concurrent process each.  Ordered
+# heaviest-first so the longest job starts earliest.
+CHAR_TIME_TUBE_COUNTS = (24, 16, 8, 4)
+
+
+def _char_time_pkg_on_path():
+    """Put ``project_src_package_2025`` on ``sys.path`` (needed in each child).
+
+    Workers are started with the "spawn" method, so every child re-imports this
+    module from scratch and must set its own import path up again.
+    """
+    import os
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "project_src_package_2025")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    return pkg
+
+
+def _run_one_char_time_job(n_tubes):
+    """Run a single ``collect_char_time_mass`` job for ``n_tubes`` microtubules.
+
+    Executed in its own process (see CHAR_TIME_SWEEP notes above).  Must stay a
+    module-level function so it is picklable by the "spawn" start method.
+
+    Returns ``(n_tubes, elapsed_seconds)``; the caller prints the summary so the
+    four workers do not interleave their reports mid-line.
+    """
+    import time as _time
+
+    import numpy as np
+
+    _char_time_pkg_on_path()
+    from launch_functions import launch
+
+    cfg = CHAR_TIME_SWEEP
+    rings, rays = cfg["rings"], cfg["rays"]
+
+    # Evenly-spaced microtubule angular positions, e.g. for 96 rays and 24
+    # tubes: linspace(0, 96 - 96//24, 24) -> every 4th ray.
+    N_LIST = np.linspace(0, rings - (rings // n_tubes), n_tubes, dtype=int)
+
+    print(f"[{n_tubes:>2} tubes] starting ({rings}x{rays}, "
+          f"v={cfg['v_list']}, a=b={cfg['w']}, T={cfg['T']})", flush=True)
+
+    start = _time.perf_counter()
+    launch.collect_char_time_mass(rings, rays, cfg["v_list"], cfg["w"],
+                                  cfg["T"], N_LIST, show_plt=False)
+    elapsed = _time.perf_counter() - start
+
+    print(f"[{n_tubes:>2} tubes] done in {elapsed/3600:.2f} hr", flush=True)
+    return n_tubes, elapsed
+
+
+def run_char_time_sweep_concurrent():
+    """Run the four microtubule configurations as concurrent processes.
+
+    Uses one worker per configuration so all four proceed in parallel on
+    separate cores.  Wall time for the whole sweep is therefore roughly the
+    cost of a single job rather than the sum of all four.
+    """
+    import time as _time
+
+    cfg = CHAR_TIME_SWEEP
+    n_jobs = len(CHAR_TIME_TUBE_COUNTS)
+
+    print(f"=== concurrent characteristic-time sweep ===")
+    print(f"grid          : {cfg['rings']}x{cfg['rays']}")
+    print(f"v list        : {cfg['v_list']}")
+    print(f"a = b         : {cfg['w']}")
+    print(f"T             : {cfg['T']}")
+    print(f"tube counts   : {list(CHAR_TIME_TUBE_COUNTS)}")
+    print(f"processes     : {n_jobs} (one per tube count, running concurrently)")
+    print(flush=True)
+
+    sweep_start = _time.perf_counter()
+
+    # "spawn" is the only start method on Windows and keeps each worker's
+    # numba/matplotlib state fully isolated.
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=n_jobs) as pool:
+        results = pool.map(_run_one_char_time_job, CHAR_TIME_TUBE_COUNTS)
+
+    sweep_elapsed = _time.perf_counter() - sweep_start
+
+    print()
+    print("=== sweep complete ===")
+    print(f"{'tubes':>6} {'wall time':>12}")
+    serial_total = 0.0
+    for n_tubes, elapsed in results:
+        serial_total += elapsed
+        print(f"{n_tubes:>6} {elapsed/3600:>9.2f} hr")
+    print()
+    print(f"sum of job times (what a sequential run would cost): "
+          f"{serial_total/3600:.2f} hr")
+    print(f"actual wall time for the concurrent sweep          : "
+          f"{sweep_elapsed/3600:.2f} hr")
+    if sweep_elapsed > 0:
+        print(f"effective speedup from concurrency                 : "
+              f"{serial_total/sweep_elapsed:.2f}x")
+
+
 def run_super_comp_off_center():
     """Run the super computation (launch_super_comp_I) under an OFF-CENTERED
     initial condition.
@@ -125,38 +270,26 @@ def run_super_comp_off_center():
     # Task for 8/5/2026
     # candidate V list : [0.1, 1, 10, 100, 1000, 10**4], for 96x96, N=4,8,16,24, a=b=10, 100
 
-    # --- Timed runs with 96x96 grid ---
-    print("\n=== Starting timed runs with 96x96 grid ===")
-
-    # Block 1: 24 microtubules
-    print("\nBlock 1: 24 microtubules")
-    start_time = time.time()
-    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//24), 24, dtype=int), show_plt=False)
-    elapsed = time.time() - start_time
-    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
-
-    # Block 2: 16 microtubules
-    print("\nBlock 2: 16 microtubules")
-    start_time = time.time()
-    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//16), 16, dtype=int), show_plt=False)
-    elapsed = time.time() - start_time
-    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
-
-    # Block 3: 8 microtubules
-    print("\nBlock 3: 8 microtubules")
-    start_time = time.time()
-    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//8), 8, dtype=int), show_plt=False)
-    elapsed = time.time() - start_time
-    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
-
-    # Block 4: 4 microtubules
-    print("\nBlock 4: 4 microtubules")
-    start_time = time.time()
-    launch.collect_char_time_mass(rg_param, ry_param, [10 ** 4], w_param, T_param, np.linspace(0, 96 - (96//4), 4, dtype=int), show_plt=False)
-    elapsed = time.time() - start_time
-    print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
-
-    print("\n=== All runs completed ===" )
+    # --- Timed runs with 96x96 grid (SUPERSEDED) ----------------------------
+    # These four blocks ran sequentially in a single process, which cost ~43 hr
+    # and also let each job's PNG inherit the previous jobs' scatter points
+    # (see the CHAR_TIME_SWEEP notes above).  They are kept here only for
+    # reference; use run_char_time_sweep_concurrent() instead, which runs the
+    # same four configurations as concurrent processes in ~10.7 hr.
+    #
+    # print("\n=== Starting timed runs with 96x96 grid ===")
+    #
+    # for n_tubes in (24, 16, 8, 4):
+    #     print(f"\nBlock: {n_tubes} microtubules")
+    #     start_time = time.time()
+    #     launch.collect_char_time_mass(
+    #         rg_param, ry_param, [10 ** 4], w_param, T_param,
+    #         np.linspace(0, 96 - (96 // n_tubes), n_tubes, dtype=int),
+    #         show_plt=False)
+    #     elapsed = time.time() - start_time
+    #     print(f"Wall time: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+    #
+    # print("\n=== All runs completed ===")
 
 
 if __name__ == "__main__":
@@ -164,7 +297,14 @@ if __name__ == "__main__":
     # processes do not re-run the top-level application logic.
     # multiprocessing.freeze_support()
 
-    run_super_comp_off_center()
+    # --- Concurrent characteristic-time sweep (96x96) -----------------------
+    # Runs the 24 / 16 / 8 / 4 microtubule configurations as four concurrent
+    # processes.  See the CHAR_TIME_SWEEP block above for why this is safe and
+    # what it costs.  multiprocessing.freeze_support() is required here because
+    # the "spawn" start method re-imports this module in every child.
+    multiprocessing.freeze_support()
+    run_char_time_sweep_concurrent()
+
     # --- Off-centered super-computation run ---------------------------------
     # run_super_comp_off_center()
 
