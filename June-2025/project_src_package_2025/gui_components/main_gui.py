@@ -3,8 +3,9 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QComboBox, QPushButton, QMessageBox, QStatusBar, QSizeGrip)
 from PyQt5.QtGui import QGuiApplication, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QPoint
-from . import views
+from .control_panel import ControlPanel
 from . import fp
+from . import theme
 
 from project_src_package_2025.gui_components import styles
 
@@ -97,7 +98,7 @@ class MainWindow(QMainWindow):
         # container.setContentsMargins(16, 16, 16, 16)
 
         # Your control panel
-        self.control_panel = views.ControlPanel(self)
+        self.control_panel = ControlPanel(self)
         layout.addWidget(self.control_panel)
 
         self.setCentralWidget(container)
@@ -121,22 +122,16 @@ class MainWindow(QMainWindow):
 
 
 def run_app():
+    # HiDPI attributes must be set before the QApplication is constructed so the
+    # interface stays crisp on Retina / scaled displays.
+    theme.enable_high_dpi()
     app = QApplication(sys.argv)
 
-    from importlib import resources
-
-    style_data = resources.files('project_src_package_2025.gui_components.styles') \
-        .joinpath('style.qss') \
-        .read_text()
-
-    # style_data = resources.files(styles).joinpath('style.qss').read_text()
-
-    # from importlib.resources import read_text
-    # from project_src_package_2025.gui_components import styles
-    #
-    # style_data = read_text(styles, "style.qss")
-
-    app.setStyleSheet(style_data)
+    # Set the base font up front so widget size hints use the final metrics
+    # (prevents clipped tab labels / button rows), then apply the stylesheet
+    # (importlib.resources with a filesystem fallback for frozen builds).
+    theme.apply_base_font(app)
+    app.setStyleSheet(theme.load_stylesheet())
 
     window = MainWindow()
     window.show()

@@ -1,3 +1,5 @@
+import pandas as pd
+
 from . import njit, numerical_tools as num, np
 from computational_tools import struct_init
 
@@ -6,6 +8,7 @@ from computational_tools import struct_init
 # All methods below implement the space efficient two-step approach (in terms of how numerical data is stored across updates), i.e, [0][m][n] refers to the current (step k), and [1][m][n] refers to next (step k+1).
 
 # v======================================== Mass stamp dependent analysis tools ========================================v
+
 
 @njit
 # (****) (****)
@@ -167,7 +170,6 @@ def comp_diffusive_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch
             print(
                 "********************************************************************************************************")
 
-
         MFPT += net_current_out * k * dT ** 2
 
         if checkpoint_iter < len(checkpoint_collect_container):
@@ -246,6 +248,16 @@ def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, 
             curr_stamp = np.floor(checkpoint_collect_container[checkpoint_iter] / dT)
             if k == curr_stamp:
                 PvT_DL_snapshots[checkpoint_iter] = D_LAYER[0][int(np.floor(rg_param * T_fixed_ring_seg))]
+
+                # 1/30/26
+                # print("Time: ", checkpoint_collect_container[checkpoint_iter])
+                # m_idx = int(np.floor(rg_param * T_fixed_ring_seg))
+                # n_idx = int(N_LIST[0])
+                # abs_err = num.comp_verify_bc(A_LAYER, D_LAYER, m_idx, n_idx, switch_param_a)
+                # print("position: ", m_idx, "x", n_idx, "abs_err: ", abs_err)
+                # print()
+                # 1/30/26
+
                 checkpoint_iter += 1
         else:
             return
@@ -257,6 +269,194 @@ def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, 
         k += 1
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+
+def comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param,
+                                            N_LIST, D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+    print("Running optimized version.")
+
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).')
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] > ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+
+    dRad = num.compute_dRad(ry_param, domain_radius)
+    dThe = num.compute_dThe(ry_param)
+    dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    v_param *= -1
+
+    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    mass_retained = 0
+
+    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+
+    checkpoint_iter = 0
+
+    # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    k = 0
+
+    while k < K:
+
+        num.comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST, dRad, dThe, dT,
+                                 switch_param_a, switch_param_b, v_param, d_tube)
+
+        if k > 0 and k % mass_checkpoint == 0:
+            print(
+                "********************************************************************************************************")
+            print("Current timestep: ", k, "Current simulation time: ", k * dT, "Current DL mass: ", mass_retained)
+            print("Velocity (v): ", v_param, "Diffusive to Advective switch rate (a): ", switch_param_a,
+                  "Advective to Diffusive switch rate (b): ", switch_param_b)
+            print(
+                "********************************************************************************************************")
+
+        if checkpoint_iter < len(checkpoint_collect_container):
+            curr_stamp = np.floor(checkpoint_collect_container[checkpoint_iter] / dT)
+            if k == curr_stamp:
+                diffusion_matrix[checkpoint_iter] = D_LAYER[0][0:rg_param-1]
+                central_vector[checkpoint_iter] = central_patch
+                # Ang_traj_mat[checkpoint_iter] = D_LAYER[0][0:rg_param - 1][0:N_LIST[1]-1]
+                checkpoint_iter += 1
+        else:
+            return
+
+        mass_retained = num.calc_mass(D_LAYER, A_LAYER, 0, dRad, dThe, central_patch, rg_param, ry_param, N_LIST)
+        central_patch = num.u_center(D_LAYER, 0, dRad, dThe, dT, central_patch, A_LAYER, N_LIST, v_param)
+        D_LAYER[0] = D_LAYER[1]
+        A_LAYER[0] = A_LAYER[1]
+        k += 1
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+@njit
+def comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param, N_LIST, D_LAYER, A_LAYER, checkpoint,
+                                           T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+    print("Running optimized version.")
+
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).')
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] > ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+
+    dRad = num.compute_dRad(ry_param, domain_radius)
+    dThe = num.compute_dThe(ry_param)
+    dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    v_param *= -1
+    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+
+    # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    k = 0
+    dl_mass = 1
+    al_mass = 0
+
+    curr_stamp = np.floor(checkpoint / dT)
+
+    while k < K:
+
+        num.comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST, dRad, dThe, dT,
+                                 switch_param_a, switch_param_b, v_param, d_tube)
+
+        if k > 0 and k % mass_checkpoint == 0:
+            print(
+                "********************************************************************************************************")
+            print("Current timestep: ", k, "Current simulation time: ", k * dT, "Current DL mass: ", dl_mass)
+            print("Velocity (v): ", v_param, "Diffusive to Advective switch rate (a): ", switch_param_a,
+                  "Advective to Diffusive switch rate (b): ", switch_param_b)
+            print(
+                "********************************************************************************************************")
+
+        if k == curr_stamp:
+            fixed_ring_seg = int(np.floor(rg_param * T_fixed_ring_seg))
+            BC_ratio_snapshot = num.comp_verify_bc(A_LAYER, D_LAYER, fixed_ring_seg, N_LIST[0], switch_param_b)
+            mass_retained = dl_mass + al_mass
+            return BC_ratio_snapshot, mass_retained
+
+        # Update mass for the next step
+        dl_mass = num.calc_mass_diff(D_LAYER, 0, dRad, dThe, central_patch, rg_param, ry_param)
+        al_mass = num.calc_mass_adv(A_LAYER, 0, dRad, dThe, rg_param, N_LIST)
+        central_patch = num.u_center(D_LAYER, 0, dRad, dThe, dT, central_patch, A_LAYER, N_LIST, v_param)
+
+        D_LAYER[0] = D_LAYER[1]
+        A_LAYER[0] = A_LAYER[1]
+        k += 1
+# - - - - - - - - - - - - - - - - - - - - - -
+
+
+@njit
+def comp_peak_time_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b, T_param, v_param, Jrr_sum_timeseries,
+                             N_LIST, D_LAYER, A_LAYER, relative_k, collection_factor, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6):
+    print("Running optimized version.")
+
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).')
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] > ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+
+    dRad = num.compute_dRad(ry_param, domain_radius)
+    dThe = num.compute_dThe(ry_param)
+    dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    v_param *= -1
+
+    central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    mass_retained = 0
+
+    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    k_step = 0
+
+    # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    k = 0
+
+    while k < K:
+
+        num.comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST,
+                                                 dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube)
+
+        if k_step < relative_k and k % collection_factor == 0:
+            Jrr_sum_timeseries[k_step] = num.comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST, dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube)
+            k_step += 1
+
+        if k > 0 and k % mass_checkpoint == 0:
+            print(
+                "********************************************************************************************************")
+            print("Current timestep: ", k, "Current simulation time: ", k * dT, "Current DL mass: ", mass_retained)
+            print("Velocity (v): ", v_param, "Diffusive to Advective switch rate (a): ", switch_param_a,
+                  "Advective to Diffusive switch rate (b): ", switch_param_b)
+            print(
+                "********************************************************************************************************")
+
+        mass_retained = num.calc_mass_diff(D_LAYER, 0, dRad, dThe, central_patch, rg_param, ry_param) + num.calc_mass_adv(A_LAYER, 0, dRad, dThe, rg_param, N_LIST)
+        central_patch = num.u_center(D_LAYER, 0, dRad, dThe, dT, central_patch, A_LAYER, N_LIST, v_param)
+        D_LAYER[0] = D_LAYER[1]
+        A_LAYER[0] = A_LAYER[1]
+        k += 1
+# - - - - - - - - - - - - - - - - - - - - - -
+
+
+def bc_secant_computation(data_filepath):
+    data = pd.read_csv(data_filepath)
+    w = data["w"].values
+    bc_ratios = data["BC_ratios"].values
+
+    n = len(w)-1
+    secant_array = np.zeros(n, dtype=np.float64)
+
+    for i in range(n):
+        secant_array[i] = (bc_ratios[i+1] - bc_ratios[i])/(w[i+1] - w[i])
+
+    return secant_array
 
 # (****) (****)
 @njit
@@ -317,7 +517,6 @@ def comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, switch_param_a, sw
         k += 1
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 
 # (****) (****)
 @njit
@@ -538,7 +737,6 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
     v_param *= -1
-
     # Initialize the ring position (m) dependent extraction range dictionary
     d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
@@ -551,7 +749,6 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
 
     # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     k = 0
-
     while k < K:
 
         num.comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST, dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube)
@@ -574,6 +771,11 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
             MA_ALoT_timeseries[MA_k_step] = al_mass / MA_TM_timeseries[MA_k_step]
             MA_ALoI_timeseries[MA_k_step] = al_mass / D
             MA_k_step += 1
+
+            # fixed_ring_seg = int(np.floor(rg_param * T_fixed_ring_seg))
+            # PvT_DL_snapshots[snapshot_idx] = D_LAYER[ 0 ][ fixed_ring_seg ]
+            # BC_ratio_snapshot = num.comp_verify_bc_ratio(A_LAYER, D_LAYER, fixed_ring_seg, N_LIST[0], switch_param_a)
+            # print(BC_ratio_snapshot)
 
         # Update mass for the next step
         dl_mass = num.calc_mass_diff(D_LAYER, 0, dRad, dThe, central_patch, rg_param, ry_param)

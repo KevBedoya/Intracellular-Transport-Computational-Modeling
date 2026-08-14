@@ -11,7 +11,6 @@ def initialize_layers(rg_param, ry_param):
     advective_layer = np.zeros((2, rg_param, ry_param), dtype=np.float64)
     return diffusive_layer, advective_layer
 
-
 @njit
 def solve_d_rect(r, rings, rays, j_max, m):
     d_radius = r / rings

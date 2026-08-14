@@ -1,5 +1,6 @@
 from . import plt, os, pd, datetime, math
-
+from project_src_package_2025.computational_tools import mat_computations
+import numpy as np
 
 def plot_general(file_list, labels, xlab, ylab, title, filepath, xlog=False, ylog=False, ylims=None,
                  continuous=False, dynamic_pts=False, save_png=True, show_plt=True, transparent=False,
@@ -105,7 +106,64 @@ def _pi_frac_label_from_index(k: int, N: int, include_index=True):
     return s
 
 
-def plot_phi_v_theta(data_filepath, v, w, N_LIST, approach, position, file_path, checkpoint_collect_container, save_png=True, show_plt=True):
+def plot_bc_analysis(data_filepath, _LIST, v_param, checkpoint, T_fixed_ring_seg, file_path, save_png=True, show_plt=True, grid_analysis=False):
+    data = pd.read_csv(data_filepath)
+    x = _LIST
+    y = data["BC_ratios"].values
+
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "serif",
+        "font.size": 14
+    })
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    label_expr = r"$\frac{\left|\frac{1}{r}\left(\frac{\partial \phi}{\partial \theta}\big|_{L} - \frac{\partial \phi}{\partial \theta}\big|_{R}\right)\right|}{\phi(r,\theta_i) - \rho(r)}$"
+
+    ax.plot(x, y, linewidth=2, label=label_expr)
+    ax.scatter(x, y, s=40, zorder=3)
+
+    if grid_analysis:
+        ax.set_xlabel(r"Grid-Size", fontsize=16)
+    else:
+        ax.set_xlabel(r"$W$", fontsize=16)
+
+    ax.set_ylabel(
+        label_expr,
+        fontsize=14
+    )
+
+    if grid_analysis:
+        ax.set_title(
+            rf"\textbf{{Boundary condition (BC) ratio versus grid-size}}\\"
+            rf"$V={v_param},\ T={checkpoint},\ r={T_fixed_ring_seg}$",
+            fontsize=16
+        )
+    else:
+        ax.set_title(
+            rf"\textbf{{Boundary condition (BC) ratio versus $W$}}\\"
+            rf"$V={v_param},\ T={checkpoint},\ r={T_fixed_ring_seg}$",
+            fontsize=16
+        )
+
+    ax.grid(True, linestyle="--", linewidth=0.6, alpha=0.7)
+    ax.legend(loc="best", fontsize=12, frameon=True)
+
+    plt.tight_layout()
+
+    if save_png:
+        if file_path:
+            if not os.path.exists(file_path):
+                os.makedirs(file_path)
+            file = os.path.join(file_path, "BC_analysis_plot.png")
+            plt.savefig(file, bbox_inches='tight', dpi=300)
+            print(f'Plot saved to {file}')
+
+    if show_plt:
+        plt.show()
+
+def plot_phi_v_theta(data_filepath, v, w, N_LIST, approach, position, file_path, checkpoint_collect_container, save_png=True, show_plt=True, png_title="phi_v_theta.png"):
 
     data = pd.read_csv(data_filepath)
 
@@ -167,6 +225,7 @@ def plot_phi_v_theta(data_filepath, v, w, N_LIST, approach, position, file_path,
     plt.xlabel("Theta (radians, with Disc-Pos index)")
     # plt.yscale('log')
     plt.ylabel(r"$\phi$")
+    # plt.ylim(0.3, 0.4)
     title = r"$\phi$" + f"  W={w:.2e}   V={v}   N={len(N_LIST)}  Position={position}"
     plt.title(title)
     plt.legend()
@@ -178,10 +237,9 @@ def plot_phi_v_theta(data_filepath, v, w, N_LIST, approach, position, file_path,
         if file_path:
             if not os.path.exists(file_path):
                 os.makedirs(file_path)
-            file = os.path.join(file_path, "phi_v_theta.png")
+            file = os.path.join(file_path, png_title)
             plt.savefig(file, bbox_inches='tight')
             print(f'Plot saved to {file}')
-
     if show_plt:
         plt.show()
     plt.close()
@@ -292,6 +350,343 @@ def plot_mass_analysis(data_filepath, v, w, N, T, rings, rays, mass_type, file_n
         plt.show()
     plt.close()
 
+
+def plot_Jrr_sum_analysis(data_filepath, v, w, N, rings, rays, file_path, save_png=True, show_plt=True):
+
+    data = pd.read_csv(data_filepath)
+
+    plt.figure(figsize=(10, 6))
+
+    x = data['T']
+    y = data['Jrr_sum']
+
+    plt.plot(x, y)
+
+    plt.xlabel("(T) Time")
+    plt.ylabel("(Jrr_sum) Mass")
+
+    title = f"Jrr_sum v. Time  W={w:.2e}   V={v}   N={len(N)}  Domain={rings}x{rays}"
+
+    plt.title(title)
+    plt.grid(True)
+    plt.tight_layout()
+
+    if save_png:
+        if file_path:
+            if not os.path.exists(file_path):
+                os.makedirs(file_path)
+            filename_ = "Jrr_versus_t.png"
+            file = os.path.join(file_path, filename_)
+            plt.savefig(file, bbox_inches='tight')
+            print(f'Plot saved to {file_path}')
+    if show_plt:
+        plt.show()
+
+def plot_normalized_separable_trajectories(
+    D,
+    v_param,
+    w_param,
+    T_param,
+    N_param_count,
+    central_patch_density,
+    selected_rings=None,
+    selected_rays=None,
+    round_digits=2,
+    include_central_patch=True
+):
+    """
+    Plot normalized phi(theta) and phi(r) trajectories.
+
+    Parameters
+    ----------
+    D : ndarray
+        Diffusive layer matrix of shape
+        (radial rings, angular rays).
+
+    v_param : float
+        Filament velocity.
+
+    w_param : float
+        Switching rate.
+
+    T_param : float
+        Dimensionless time.
+
+    N_param_count : int
+        Number of filaments.
+
+    central_patch_density : float
+        Density value at the central patch (r = 0).
+
+    selected_rings : list
+
+    selected_rays : list
+
+    round_digits : int, optional
+        Number of decimal digits for radius labels.
+
+    include_central_patch : bool, optional
+        If True, prepend the normalized central patch density
+        to each radial trajectory. If False, plot only the
+        radial rings contained in D.
+    """
+
+    m, n = D.shape
+
+    ########################################################
+    # Plot 1 : phi(theta)
+    ########################################################
+
+    N = D.T.copy()
+
+    mat_computations.normalize_columns(N)
+
+    theta = np.linspace(0, 2 * np.pi, n)
+
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+
+    for ring in selected_rings:
+
+        ax1.plot(
+            theta,
+            N[:, ring],
+            linewidth=1.5,
+            label=rf"$r={ring}$"
+        )
+
+    ax1.set_xlabel(r"$\theta$", fontsize=14)
+    ax1.set_ylabel(r"Normalized $\phi(\theta)$", fontsize=14)
+
+    ax1.set_title(
+        rf"Normalized Angular Trajectories "
+        rf"($v={v_param}$, "
+        rf"$w={w_param}$, "
+        rf"$T={T_param}$, "
+        rf"$N={N_param_count}$)",
+        fontsize=14
+    )
+
+    ax1.set_xticks(
+        [
+            0,
+            np.pi / 2,
+            np.pi,
+            3 * np.pi / 2,
+            2 * np.pi
+        ]
+    )
+
+    ax1.set_xticklabels(
+        [
+            r"$0$",
+            r"$\frac{\pi}{2}$",
+            r"$\pi$",
+            r"$\frac{3\pi}{2}$",
+            r"$2\pi$"
+        ]
+    )
+
+    ax1.grid(True, alpha=0.3)
+
+    ax1.legend(
+        title="Fixed radial ring",
+        fontsize=8,
+        loc="best"
+    )
+
+    fig1.tight_layout()
+
+    ########################################################
+    # Plot 2 : phi(r)
+    ########################################################
+
+    R = D.copy()
+
+    central_patch_normalized = (
+        mat_computations.normalize_columns(
+            R,
+            return_central_vector=True,
+            central_patch=central_patch_density
+        )
+    )
+
+    dr = 1.0 / (m + 1)
+
+    if include_central_patch:
+
+        radius = np.concatenate(
+            (
+                [0.0],
+                np.arange(1, m + 1) * dr
+            )
+        )
+
+    else:
+
+        radius = np.arange(1, m + 1) * dr
+
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+
+    for ray in selected_rays:
+
+        # theta_value = (
+        #     2 * np.pi * col /
+        #     (R.shape[1] - 1)
+        # )
+
+        if include_central_patch:
+
+            trajectory = np.concatenate(
+                (
+                    [central_patch_normalized[ray]],
+                    R[:, ray]
+                )
+            )
+
+        else:
+
+            trajectory = R[:, ray]
+
+        ax2.plot(
+            radius,
+            trajectory,
+            linewidth=1.5,
+            # label=rf"$\theta={theta_value / np.pi:.2f}\pi$"
+            label=rf"$\theta_i={ray}$"
+        )
+
+    ax2.set_xlabel(r"$r$", fontsize=14)
+    ax2.set_ylabel(r"Normalized $\phi(r)$", fontsize=14)
+
+    ax2.set_title(
+        rf"Normalized Radial Trajectories "
+        rf"($v={v_param}$, "
+        rf"$w={w_param}$, "
+        rf"$T={T_param}$, "
+        rf"$N={N_param_count}$)",
+        fontsize=14
+    )
+
+    ax2.grid(True, alpha=0.3)
+
+    ax2.legend(
+        title="Fixed angular ray",
+        fontsize=8,
+        loc="best"
+    )
+
+    fig2.tight_layout()
+
+    plt.show()
+
+def plot_cosine_similarity_heatmap(
+    C,
+    title="Cosine Similarity Matrix",
+    annotate=True,
+    decimals=3,
+    cmap="viridis",
+    figsize=(8, 7)
+):
+    """
+    Plot a gridded heatmap of a cosine similarity matrix.
+
+    Parameters
+    ----------
+    C : ndarray
+        Cosine similarity matrix with entries in [0, 1].
+
+    title : str, optional
+        Figure title.
+
+    annotate : bool, optional
+        If True, display numerical values in each cell.
+
+    decimals : int, optional
+        Number of displayed decimal places.
+
+    cmap : str, optional
+        Matplotlib colormap.
+
+    figsize : tuple, optional
+        Figure size.
+    """
+
+
+
+    C = np.asarray(C)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    im = ax.imshow(
+        C,
+        origin="lower",
+        cmap=cmap,
+        vmin=0.0,
+        vmax=1.0,
+        aspect="equal"
+    )
+
+    # colorbar
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Cosine Similarity", fontsize=12)
+
+    # major ticks
+    ax.set_xticks(np.arange(C.shape[1]))
+    ax.set_yticks(np.arange(C.shape[0]))
+
+    ax.set_xlabel("Trajectory Index")
+    ax.set_ylabel("Trajectory Index")
+
+    ax.set_title(title)
+
+    # grid lines
+    ax.set_xticks(
+        np.arange(-0.5, C.shape[1], 1),
+        minor=True
+    )
+    ax.set_yticks(
+        np.arange(-0.5, C.shape[0], 1),
+        minor=True
+    )
+
+    ax.grid(
+        which="minor",
+        color="white",
+        linestyle="-",
+        linewidth=0.5
+    )
+
+    ax.tick_params(
+        which="minor",
+        bottom=False,
+        left=False
+    )
+
+    # numerical annotations
+    if annotate:
+
+        for i in range(C.shape[0]):
+            for j in range(C.shape[1]):
+                value = C[i, j]
+
+                text_color = (
+                    "white"
+                    if value < 0.5
+                    else "black"
+                )
+
+                ax.text(
+                    j,
+                    i,
+                    f"{value:.3e}",
+                    ha="center",
+                    va="center",
+                    color=text_color,
+                    fontsize=7
+                )
+
+    fig.tight_layout()
+    plt.show()
 
 # ================================================= UNDER INSPECTION/REQUIRES UPDATES =================================================
 # def plot_dense_v_rad_mul(y_lab, data_filepaths, v, w, N, rings, rays, fixed_angle, time_point_container, file_path,

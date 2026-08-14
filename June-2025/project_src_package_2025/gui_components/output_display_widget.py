@@ -31,9 +31,16 @@ class PNGPreviewWidget(QWidget):
         self.layout.addWidget(self.image_label)
 
         self.png_paths = []
+        # Cache of the currently-decoded original pixmap so window resizes
+        # re-scale it instead of re-reading the PNG from disk every event.
+        self._current_pixmap = None
+        self._current_index = -1
 
     def update_png_list(self, png_paths):
         self.png_paths = png_paths or []
+        # Invalidate the cache so a new result set always re-decodes.
+        self._current_pixmap = None
+        self._current_index = -1
         self.dropdown.clear()
 
         for path in self.png_paths:
@@ -46,18 +53,29 @@ class PNGPreviewWidget(QWidget):
             self.image_label.clear()
 
     def update_image(self, index):
-        if 0 <= index < len(self.png_paths):
-            path = self.png_paths[index]
-            pixmap = QPixmap(path)
-            if not pixmap.isNull():
-                self.image_label.setPixmap(pixmap.scaled(
-                    self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            else:
-                print(f"Warning: failed to load image {path}")
+        if not (0 <= index < len(self.png_paths)):
+            return
+        # Decode from disk only when the selected image actually changes.
+        if index != self._current_index or self._current_pixmap is None:
+            pixmap = QPixmap(self.png_paths[index])
+            if pixmap.isNull():
+                print(f"Warning: failed to load image {self.png_paths[index]}")
+                return
+            self._current_pixmap = pixmap
+            self._current_index = index
+        self._apply_scaled_pixmap()
+
+    def _apply_scaled_pixmap(self):
+        """Scale the cached original pixmap to the current label size."""
+        if self._current_pixmap is None or self._current_pixmap.isNull():
+            return
+        self.image_label.setPixmap(self._current_pixmap.scaled(
+            self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.update_image(self.dropdown.currentIndex())
+        # Re-scale from the cached pixmap; no disk read on resize.
+        self._apply_scaled_pixmap()
 
 
 class OutputFilesWidget(QWidget):

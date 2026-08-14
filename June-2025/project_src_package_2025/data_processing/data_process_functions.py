@@ -9,6 +9,75 @@ import os
 import numpy as np
 
 
+def process_BC_analysis_DL(PvT_DL_snapshots, BC_data_dict, v_param, w_LIST, N_LIST, T_fixed_ring_seg, save_png, show_plt,
+                           checkpoint, approach, ry_param, rg_param, collect_radial_info=False):
+
+    output_location_list = []
+
+    timestamp = prints.return_timestamp()
+    data_filepath = os.path.abspath(tb.create_directory(fp.phi_v_theta_output, timestamp))
+    filename = f"BC_analysis_Dl_v={v_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    output_location = os.path.join(data_filepath, filename)
+
+    df_bc = pd.DataFrame(BC_data_dict)
+    df_bc.to_csv(output_location, index=False)
+    plt.plot_bc_analysis(output_location, w_LIST, v_param, checkpoint, T_fixed_ring_seg, data_filepath, save_png, show_plt)
+
+    if collect_radial_info:
+        checkpoint_collect_container = [checkpoint]
+        radians_mesh = [i * (2 * np.pi)/ry_param for i in range(ry_param)]
+        degrees_mesh = [ang * (180/np.pi) for ang in radians_mesh]
+
+        data_dict = {
+            'Disc-Pos': list(range(ry_param)),
+            'Radians': radians_mesh,
+            'Degrees': degrees_mesh,
+        }
+
+        if int(approach) == 1:
+            col_name = f"M={checkpoint:.4}"
+        elif int(approach) == 2:
+            col_name = f"T={checkpoint:.4f}"
+        else:
+            raise ValueError(f"Approach: {approach} is invalid. Please use approach 1 or 2. (int)")
+
+        for i in range(len(w_LIST)):
+
+            data_dict[col_name] = PvT_DL_snapshots[i]
+
+            filename = f"BC_analysis_Dl_v={v_param}_w_param={w_LIST[ i ]}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+            output_location_i = os.path.join(data_filepath, filename)
+
+            df = pd.DataFrame(data_dict)
+            df.to_csv(output_location_i, index=False)
+
+            plt.plot_phi_v_theta(output_location_i, v_param, w_LIST[i], N_LIST, approach, T_fixed_ring_seg,
+                                 data_filepath, checkpoint_collect_container, save_png=save_png, show_plt=show_plt,
+                                 png_title=f"phi_v_theta_w={w_LIST[i]}.png")
+
+            time.sleep(1)
+
+    print("\n")
+
+    output_location_list.append(output_location)
+
+    return output_location_list
+
+
+def process_BC_analysis_grid_size(BC_data_dict, grid_list, v_param, w_param, N_amount, T_fixed_ring_seg, save_png, show_plt, checkpoint):
+
+    output_location_list = []
+    timestamp = prints.return_timestamp()
+    data_filepath = os.path.abspath(tb.create_directory(fp.phi_v_theta_output, timestamp))
+    filename = f"BC_vs_Gsize_analysis_grid_v={v_param}_w={w_param}_N={N_amount}.csv"
+    output_location = os.path.join(data_filepath, filename)
+
+    df_bc = pd.DataFrame(BC_data_dict)
+    df_bc.to_csv(output_location, index=False)
+    plt.plot_bc_analysis(output_location, grid_list, v_param, checkpoint, T_fixed_ring_seg, data_filepath, save_png, show_plt, True)
+    output_location_list.append(output_location)
+    return output_location_list
+
 def process_PvT_DL(PvT_DL_snapshots, v_param, w_param, N_LIST, T_fixed_ring_seg, save_png, show_plt, checkpoint_collect_container, approach,
                    ry_param, rg_param):
 
@@ -48,6 +117,39 @@ def process_PvT_DL(PvT_DL_snapshots, v_param, w_param, N_LIST, T_fixed_ring_seg,
     output_location_list.append(output_location)
 
     return output_location_list
+
+
+def process_Jrr_sum_results(Jrr_sum_timeseries, v_param, w_param, N_LIST, rg_param,
+                            ry_param, save_png, show_plt, collection_factor, domain_radius, D):
+
+    output_location_list = []
+
+    dt = num.compute_dT(rg_param, ry_param, domain_radius, D)
+
+    T_mesh = [dt * collection_factor * t for t in range(len(Jrr_sum_timeseries))]
+
+    # Diffusive mass analysis
+    timestamp = prints.return_timestamp()
+    data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_diffusive, timestamp))
+
+    filename = f"Jrr_mass_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    output_location = os.path.join(data_filepath, filename)
+
+    data_dict = {
+        'T': T_mesh,
+        'Jrr_sum': Jrr_sum_timeseries
+    }
+
+    df = pd.DataFrame(data_dict)
+
+    df.to_csv(output_location, index=False)
+
+    peak_time, _ = num.find_max_with_time(output_location)
+
+    plt.plot_Jrr_sum_analysis(output_location, v_param, w_param, N_LIST, rg_param, ry_param, data_filepath, save_png, show_plt)
+    print("\n")
+    output_location_list.append(output_location)
+    return output_location_list, peak_time
 
 
 def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,

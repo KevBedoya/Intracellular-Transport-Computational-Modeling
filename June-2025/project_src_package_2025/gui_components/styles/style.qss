@@ -1,75 +1,304 @@
+/* ============================================================================
+   Biophysics Software -- application stylesheet (QSS)
+   ----------------------------------------------------------------------------
+   A professional, flat light theme. Appearance is driven entirely from here so
+   the Python code never hard-codes colours (see gui_components/theme.py for the
+   object names / dynamic properties these selectors target).
+
+   Palette
+     surface (cards/inputs) .... #ffffff
+     window background ......... #eef1f5
+     border .................... #d6dce2
+     text (primary) ............ #1f2933
+     text (muted) .............. #5c6b7a
+     accent (primary) .......... #1565c0   hover #0d47a1   pressed #0b3c8c
+     status: running #b26a00  success #2e7d32  error #c62828
+   ============================================================================ */
+
+/* ----------------------------- Base / typography ------------------------- */
+/* The base font family/size are set programmatically (theme.apply_base_font)
+   so widget size hints use the final metrics; only colours are set here. */
 QWidget {
-    font-family: "Segoe UI";
-    font-size: 12pt;
-    background-color: #f9f9f9;
-    color: #000000;
+    background-color: #eef1f5;
+    color: #1f2933;
 }
 
-QLabel {
-    color: #000000;
-}
-
-QPushButton {
-    background-color: #007acc;
-    color: white;
-    padding: 6px 12px;
+QToolTip {
+    background-color: #1f2933;
+    color: #ffffff;
+    border: none;
+    padding: 6px 8px;
     border-radius: 4px;
-}
-
-QPushButton:hover {
-    background-color: #005f99;
-}
-
-QComboBox {
-    background-color: white;
-    padding: 4px;
-    border: 1px solid #ccc;
-}
-
-QTextEdit {
-    background-color: #ffffff;
-    border: 1px solid #ccc;
-    font-family: "Courier New";
-}
-
-QGroupBox {
-    font-weight: bold;
-    margin-top: 10px;
-    border: 1px solid gray;
-    border-radius: 5px;
-    padding: 5px;
-}
-
-QLabel#restoredLabel {
-    color: #0066cc;
-    font-weight: bold;
     font-size: 10pt;
 }
 
+/* ------------------------------- Labels ---------------------------------- */
+QLabel {
+    color: #1f2933;
+    background: transparent;
+    letter-spacing: 0.2px;
+}
+
+/* Small section headings ("Select Visualization:", "Queued Jobs:") */
+QLabel#SectionLabel {
+    color: #5c6b7a;
+    font-size: 9.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 2px 0;
+}
+
+/* Restored-state status label */
+QLabel#restoredLabel {
+    color: #0d47a1;
+    font-weight: 600;
+    font-size: 10pt;
+}
+
+/* ------------------------------- Buttons --------------------------------- */
+QPushButton {
+    background-color: #ffffff;
+    color: #1f2933;
+    border: 1px solid #cdd5de;
+    border-radius: 6px;
+    padding: 6px 14px;
+    min-height: 30px;
+    min-width: 84px;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background-color: #f3f6fb;
+    border-color: #1565c0;
+}
+QPushButton:pressed {
+    background-color: #e7eef9;
+}
+
+/* Primary action: Launch button. Colour reflects the run state, set from
+   Python via the dynamic "state" property (theme.apply_button_state). */
+QPushButton#LaunchButton {
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+}
+QPushButton#LaunchButton[state="idle"]    { background-color: #1565c0; }
+QPushButton#LaunchButton[state="idle"]:hover    { background-color: #0d47a1; }
+QPushButton#LaunchButton[state="running"] { background-color: #b26a00; }
+QPushButton#LaunchButton[state="success"] { background-color: #2e7d32; }
+QPushButton#LaunchButton[state="error"]   { background-color: #c62828; }
+
+/* Compact "+" enqueue button */
+QPushButton#EnqueueButton {
+    color: #1565c0;
+    border: 1px solid #1565c0;
+    font-weight: 700;
+    min-width: 36px;
+    max-width: 44px;
+    padding: 6px 0;
+}
+QPushButton#EnqueueButton:hover {
+    background-color: #1565c0;
+    color: #ffffff;
+}
+
+/* Execute-Queue: secondary accent (outlined) */
+QPushButton#RunQueueButton {
+    color: #1565c0;
+    border: 1px solid #1565c0;
+    font-weight: 600;
+}
+QPushButton#RunQueueButton:hover {
+    background-color: #1565c0;
+    color: #ffffff;
+}
+
+/* Launch-Animation button: green when ready, grey when disabled. */
+QPushButton#LaunchAnimationButton:enabled {
+    background-color: #2e7d32;
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+}
+QPushButton#LaunchAnimationButton:enabled:hover {
+    background-color: #1b5e20;
+}
+
+/* Disabled state -- listed last so it wins for the coloured buttons too. */
+QPushButton:disabled,
+QPushButton#LaunchButton:disabled,
+QPushButton#RunQueueButton:disabled,
+QPushButton#EnqueueButton:disabled,
+QPushButton#LaunchAnimationButton:disabled {
+    background-color: #e1e5ea;
+    color: #9aa6b2;
+    border: 1px solid #d6dce2;
+}
+
+/* --------------------------- Combo boxes --------------------------------- */
+QComboBox {
+    background-color: #ffffff;
+    border: 1px solid #cdd5de;
+    border-radius: 6px;
+    padding: 5px 10px;
+    min-height: 28px;
+    selection-background-color: #1565c0;
+    selection-color: #ffffff;
+}
+QComboBox:hover { border-color: #aab6c4; }
+QComboBox:focus { border-color: #1565c0; }
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+}
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #cdd5de;
+    border-radius: 6px;
+    outline: none;
+    padding: 4px;
+    selection-background-color: #1565c0;
+    selection-color: #ffffff;
+}
+
+/* ----------------------------- Line edits -------------------------------- */
+QLineEdit {
+    background-color: #ffffff;
+    border: 1px solid #cdd5de;
+    border-radius: 6px;
+    padding: 5px 9px;
+    min-height: 24px;
+    selection-background-color: #1565c0;
+    selection-color: #ffffff;
+}
+QLineEdit:hover { border-color: #aab6c4; }
+QLineEdit:focus { border: 1px solid #1565c0; background-color: #ffffff; }
+QLineEdit:disabled { background-color: #f1f3f6; color: #9aa6b2; }
+
+/* --------------------------- Output console ------------------------------ */
+QTextEdit {
+    background-color: #ffffff;
+    border: 1px solid #cdd5de;
+    border-radius: 6px;
+    padding: 6px;
+}
+QTextEdit#OutputConsole {
+    background-color: #0f1b2d;
+    color: #d7e3f4;
+    border: 1px solid #16263d;
+    border-radius: 8px;
+    font-family: "Menlo", "SF Mono", "Consolas", "Courier New", monospace;
+    font-size: 10pt;
+    padding: 10px;
+    selection-background-color: #1565c0;
+    selection-color: #ffffff;
+}
+
+/* ------------------------------ Group boxes ------------------------------ */
+QGroupBox {
+    background-color: #ffffff;
+    border: 1px solid #d6dce2;
+    border-radius: 8px;
+    margin-top: 14px;
+    padding: 12px 10px 10px 10px;
+    font-weight: 600;
+}
 QGroupBox::title {
     subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 3px;
-    background-color: transparent;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: #5c6b7a;
 }
 
-QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
-    border: 1px solid #007acc;
+/* ------------------------------ Check boxes ------------------------------ */
+/* Indicator left native (keeps the OS check mark); only spacing/colour set. */
+QCheckBox {
+    spacing: 8px;
+    color: #1f2933;
+    background: transparent;
+}
+QCheckBox:disabled { color: #9aa6b2; }
+
+/* ------------------------------ List widget ------------------------------ */
+QListWidget {
     background-color: #ffffff;
+    border: 1px solid #cdd5de;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+QListWidget#QueueList::item {
+    padding: 7px 8px;
+    border-radius: 6px;
+    margin: 1px 0;
+}
+QListWidget#QueueList::item:hover {
+    background-color: #eef3fb;
+}
+QListWidget#QueueList::item:selected {
+    background-color: #1565c0;
+    color: #ffffff;
 }
 
-QPushButton {
-    min-height: 32px;
-    min-width: 80px;
+/* -------------------------------- Tabs ----------------------------------- */
+QTabWidget::pane {
+    border: 1px solid #d6dce2;
+    border-radius: 8px;
+    background-color: #ffffff;
+    top: -1px;
+}
+QTabBar::tab {
+    background: transparent;
+    color: #5c6b7a;
+    padding: 9px 24px;
+    margin-right: 4px;
+    min-width: 96px;
+    border: 1px solid transparent;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    font-weight: 600;
+}
+QTabBar::tab:hover { color: #1f2933; }
+QTabBar::tab:selected {
+    background-color: #ffffff;
+    color: #1565c0;
+    border: 1px solid #d6dce2;
+    border-bottom-color: #ffffff;
 }
 
-QPushButton:disabled {
-    background-color: #d0d0d0;
-    color: #888888;
+/* ------------------------------ Scroll bars ------------------------------ */
+QScrollBar:vertical {
+    background: transparent;
+    width: 12px;
+    margin: 2px;
 }
-
-QLabel {
-    font-weight: 500;
-    letter-spacing: 0.3px;
+QScrollBar::handle:vertical {
+    background: #c2ccd8;
+    min-height: 28px;
+    border-radius: 5px;
 }
+QScrollBar::handle:vertical:hover { background: #aab6c4; }
+QScrollBar:horizontal {
+    background: transparent;
+    height: 12px;
+    margin: 2px;
+}
+QScrollBar::handle:horizontal {
+    background: #c2ccd8;
+    min-width: 28px;
+    border-radius: 5px;
+}
+QScrollBar::handle:horizontal:hover { background: #aab6c4; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
+/* ------------------------ Scroll areas / status bar ---------------------- */
+QScrollArea { border: none; background: transparent; }
+QStatusBar { background: transparent; color: #5c6b7a; }
+
+/* ------------------------------- Dialogs --------------------------------- */
+QDialog { background-color: #eef1f5; }
+QDialogButtonBox QPushButton { min-width: 90px; }

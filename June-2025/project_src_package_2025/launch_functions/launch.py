@@ -115,6 +115,48 @@ def collect_phi_ang_dep_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, c
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
+#
+def compute_ang_traj_mat(rg_param, ry_param, v_param, w_param, N_LIST, checkpoint_collect_container,
+                         mass_retention_threshold=0.01, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, save_png=True, show_plt=False):
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
+        )
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] >= ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+    N_LIST.sort()
+
+    # checkpoint_collect_container.sort(reverse=True)
+
+    checkpoint_collect_container = [float(item) for item in checkpoint_collect_container]
+
+    # d_tube_max is with respect to the non-overlapping microtubule extraction region implementation.
+    d_tube_max = sup.solve_d_rect(domain_radius, rg_param, ry_param, sup.j_max_bef_overlap(ry_param, N_LIST), 0)
+
+    if d_tube < 0 or d_tube > d_tube_max:
+        raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
+
+    collection_stamp_enum = len(checkpoint_collect_container)
+
+    diffusion_matrix = np.zeros((collection_stamp_enum, rg_param-1, ry_param), dtype=np.float64)
+    # ang_traj_mat = np.zeros((collection_stamp_enum, N_LIST[1]-1, ry_param), dtype=np.float64)
+    central_vector = np.zeros(collection_stamp_enum, dtype=np.float64)
+
+    D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+
+    T_param = checkpoint_collect_container[-1] + 0.001
+
+    ant.comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, w_param, w_param, T_param, v_param, N_LIST,
+                                                       D_LAYER, A_LAYER, diffusion_matrix, central_vector, checkpoint_collect_container, d_tube, domain_radius, D, mass_checkpoint)
+
+    return diffusion_matrix, central_vector
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+
 # (****) (****)
 def collect_density_rad_depend_mass_dep(rg_param, ry_param, v_param, w_param,  N_LIST, checkpoint_collect_container,
                                         R_fixed_angle=-1, domain_radius=1.0, D=1.0, d_tube=0.0,
@@ -215,6 +257,145 @@ def heatmap_production_mass_dep(rg_param, ry_param, v_param, w_param, N_LIST, ch
 
 
 # v======================================== Time dependent computations ========================================v
+
+
+def collect_Jrr_mass_sum_over_time(rg_param, ry_param, v_param, w_param, T_param, N_LIST, collection_factor=5, domain_radius=1.0, D=1.0,
+                                   mass_checkpoint=10 ** 6, d_tube=0.0, collection_factor_limit=10 ** 3, save_png=True, show_plt=False):
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
+        )
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] >= ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+    N_LIST.sort()
+
+    d_tube_max = sup.solve_d_rect(domain_radius, rg_param, ry_param, sup.j_max_bef_overlap(ry_param, N_LIST), 0)
+
+    if d_tube < 0 or d_tube > d_tube_max:
+        raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
+
+    if collection_factor < 1 or collection_factor > collection_factor_limit:
+        print("MA_collection_factor automatically adjusted to legal range.")
+        collection_factor = 100
+
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    relative_k = int(np.floor(K / collection_factor))
+
+    D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+
+    Jrr_sum_timeseries = np.zeros([relative_k], dtype=np.float64)
+    ant.comp_peak_time_mass_loss(rg_param, ry_param, w_param, w_param, T_param, v_param,
+                                 Jrr_sum_timeseries, N_LIST, D_LAYER, A_LAYER, relative_k,
+                                 collection_factor, d_tube, domain_radius, D, mass_checkpoint)
+
+    return pro.process_Jrr_sum_results(Jrr_sum_timeseries, v_param, w_param, N_LIST, rg_param, ry_param, save_png, show_plt, collection_factor, domain_radius, D)
+
+
+def collect_BC_param_dependence(rg_param, ry_param, v_param, T_param, N_LIST, w_LIST,
+                                 checkpoint, T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0,
+                                 mass_checkpoint=10**6, save_png=True, show_plt=False):
+    if len(N_LIST) > ry_param:
+        raise IndexError(
+            f'Too many angular indices supplied for microtubule positions: {len(N_LIST)} > {ry_param} (number of angular positions in domain).'
+        )
+
+    for i in range(len(N_LIST)):
+        if N_LIST[i] < 0 or N_LIST[i] >= ry_param:
+            raise IndexError(
+                f'Angular index: {N_LIST[i]} falls outside of the legal index range: [0,{ry_param - 1}) under ry_param={ry_param}')
+    N_LIST.sort()
+
+    if T_fixed_ring_seg < 0 or T_fixed_ring_seg > 1:
+        print("T_fixed_ring_seg automatically adjusted to legal range.")
+        T_fixed_ring_seg = 0.5
+
+    # d_tube_max is with respect to the non-overlapping microtubule extraction region implementation.
+    d_tube_max = sup.solve_d_rect(domain_radius, rg_param, ry_param, sup.j_max_bef_overlap(ry_param, N_LIST), 0)
+
+    if d_tube < 0 or d_tube > d_tube_max:
+        raise ValueError(f"d_tube: {d_tube} is outside of the legal range: [0, {d_tube_max}")
+
+    w_LIST_length = len(w_LIST)
+    PvT_DL_snapshots = np.zeros((w_LIST_length, ry_param), dtype=np.float64)
+
+    data_dict = {
+        'BC_ratios': [],
+        'mass_correspondence': []
+    }
+
+    # data_dict = {
+    #     'RHS': [],
+    #     'LHS': [],
+    #     'mass_correspondence': []
+    # }
+
+    delta_R = num.compute_dRad(rg_param)
+    delta_theta = num.compute_dThe(ry_param)
+    fixed_ring_seg = int(np.floor(rg_param * T_fixed_ring_seg))
+
+    for i in range(w_LIST_length):
+        D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+        w_param = w_LIST[i]
+        b_param = w_param
+        a_param = b_param/(delta_R * delta_theta * (fixed_ring_seg+1))
+        # a_param = w_param
+        BC_ratio_snapshot, mass_retained = ant.comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, a_param, b_param, T_param, v_param, N_LIST, D_LAYER,
+                                                                                      A_LAYER, checkpoint, T_fixed_ring_seg=T_fixed_ring_seg, d_tube=d_tube, domain_radius=domain_radius,
+                                                                                      D=D, mass_checkpoint=mass_checkpoint)
+        # RHS, LHS, mass_retained = ant.comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, w_param, w_param, T_param, v_param, N_LIST, D_LAYER, A_LAYER, PvT_DL_snapshots, i, checkpoint)
+        data_dict['BC_ratios'].append(BC_ratio_snapshot)
+        # data_dict['RHS'].append(RHS)
+        # data_dict['LHS'].append(LHS)
+        data_dict['mass_correspondence'].append(mass_retained)
+
+    data_dict["w"] = w_LIST
+    print("\n\n")
+
+    return pro.process_BC_analysis_DL(PvT_DL_snapshots, data_dict, v_param, w_LIST, N_LIST, T_fixed_ring_seg, save_png, show_plt, checkpoint, 2, ry_param, rg_param)
+
+
+def collect_BC_param_dependence_grid_size(v_param, T_param, w_param, N_amount,
+                                          checkpoint, grid_list, T_fixed_ring_seg=0.5, d_tube=0.0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6, save_png=True, show_plt=False):
+
+    if T_fixed_ring_seg < 0 or T_fixed_ring_seg > 1:
+        print("T_fixed_ring_seg automatically adjusted to legal range.")
+        T_fixed_ring_seg = 0.5
+
+    grid_list_length = len(grid_list)
+
+    data_dict = {
+        'BC_ratios': [],
+        'mass_correspondence': []
+    }
+
+    b_param = w_param
+    a = b_param
+
+    for i in range(grid_list_length):
+        rg_param = grid_list[i]
+        ry_param = rg_param
+
+        drad = num.compute_dRad(rg_param, domain_radius)
+        dthe = num.compute_dThe(ry_param)
+        fixed_ring_seg = int(np.floor(rg_param * T_fixed_ring_seg))
+        r = (fixed_ring_seg + 1) * drad
+        a_param = b_param/(r * dthe)
+
+        D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+
+        N_LIST = np.linspace(0, ry_param - (ry_param / N_amount), N_amount, dtype=int)
+        BC_ratio_snapshot, mass_retained = ant.comp_BC_analysis_snapshots_time_dep_v2(rg_param, ry_param, a_param, b_param, T_param, v_param, N_LIST,
+                                                                                      D_LAYER, A_LAYER, checkpoint, T_fixed_ring_seg, d_tube, domain_radius, D, mass_checkpoint)
+        data_dict['BC_ratios'].append(BC_ratio_snapshot)
+        data_dict['mass_correspondence'].append(mass_retained)
+
+    data_dict["GS"] = grid_list
+    print("\n\n")
+    return pro.process_BC_analysis_grid_size(data_dict, grid_list, v_param, w_param, N_amount, T_fixed_ring_seg, save_png, show_plt, checkpoint)
+
 
 # (****) (****)
 def solve_mfpt_time_(rg_param, ry_param, N_LIST, v_param, w_param, T_param, domain_radius=1.0, D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0):
@@ -636,7 +817,14 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
     MA_ALoI_timeseries = np.zeros([relative_k], dtype=np.float64)
     MA_TM_timeseries = np.zeros([relative_k], dtype=np.float64)
 
-    ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, w_param, w_param, v_param, T_param, N_LIST, D_LAYER,
+    # delta_R = num.compute_dRad(rg_param)
+    # delta_theta = num.compute_dThe(ry_param)
+    # fixed_ring_seg = int(np.floor(rg_param * 0.5))
+    b_param = w_param
+    # a_param = b_param/(delta_R * delta_theta * (fixed_ring_seg + 1))
+    a_param = w_param
+
+    ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST, D_LAYER,
                                            A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
                                            MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
                                            relative_k, d_tube, domain_radius, D, mass_checkpoint)

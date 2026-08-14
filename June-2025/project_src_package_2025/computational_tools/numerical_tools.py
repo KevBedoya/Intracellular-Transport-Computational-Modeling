@@ -1,4 +1,5 @@
 from . import njit, np
+import pandas as pd
 
 
 # (****) Main numerical PDE solver implemented under the 2-step (time-step) method (****)
@@ -48,6 +49,89 @@ def comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_L
 
     return net_current_out
 
+def find_max_with_time(filepath):
+    data = pd.read_csv(filepath)
+
+    t = data.iloc[:, 0].values
+    f = data.iloc[:, 1].values
+
+    left, right = 0, len(f) - 1
+    while left < right:
+        mid = (left + right) // 2
+        if f[mid] < f[mid + 1]:
+            left = mid + 1
+        else:
+            right = mid
+
+    return t[left], f[left]
+
+@njit
+def comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST,
+                         dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube):
+    m = 0
+    while m < rg_param:
+
+        # The advective angle index 'aIdx'
+        aIdx = 0
+        n = 0
+
+        while n < ry_param:
+            if m == rg_param - 1:
+                D_LAYER[1][m][n] = 0
+
+            else:
+                if n in d_list[m]:
+                    # n denotes a discrete position (an extraction region ray) within an extraction region centered at a microtubule (indices contained in N_LIST)
+                    # if the iteration steps on an extraction region ray at ring m, then:
+                    # int(d_list[m][n]) is the corresponding microtubule position of the extraction region ray (n) at ring (m)
+                    corr_MT_pos = int(d_list[m][n])
+
+                    D_LAYER[1][m][n] = u_density_rect(D_LAYER, 0, m, n,
+                                                      dRad, dThe, dT, central_patch,
+                                                      rg_param, A_LAYER, corr_MT_pos,
+                                                      switch_param_a, switch_param_b, d_tube)
+                else:
+                    D_LAYER[1][m][n] = u_density(D_LAYER, 0, m, n,
+                                                 dRad, dThe, dT, central_patch,
+                                                 rg_param, A_LAYER, aIdx,
+                                                 switch_param_a, switch_param_b, N_LIST)
+                if n == N_LIST[aIdx]:
+
+                    A_LAYER[1][m][n] = u_tube_rect(A_LAYER, D_LAYER, 0, m, n,
+                                                   switch_param_a, switch_param_b,
+                                                   v_param, dT, dRad, dThe, d_tube)
+
+                    if aIdx < len(N_LIST) - 1:
+                        aIdx += 1
+
+                if m == rg_param - 2:
+                    return calc_loss_mass_j_r_r(D_LAYER, 0, dRad, dThe, rg_param, ry_param)
+            n += 1
+        m += 1
+
+@njit
+def comp_verify_bc(A_layer, D_layer, m_idx, n_idx, w_param):
+    M = len(D_layer[0])
+    N = len(D_layer[0][0])
+
+    delta_theta = compute_dThe(N)
+    delta_radius = compute_dRad(M)
+    r = (m_idx + 1) * delta_radius
+
+    # LHS = w_param * r * delta_theta * D_layer[0][m_idx][n_idx] - w_param * A_layer[0][m_idx][n_idx]
+    LHS = D_layer[0][m_idx][n_idx] - A_layer[0][m_idx][n_idx]
+    FDQ = (D_layer[0][m_idx][(n_idx + 1) % N] - D_layer[0][m_idx][n_idx]) / delta_theta
+
+    RHS = -(2.0/r) * FDQ
+
+    # print("FDQ: ", FDQ)
+    # print("LHS: ", LHS)
+    # print("RHS: ", RHS)
+
+    # abs_diff = abs(LHS - RHS)
+    ratio = abs(RHS)/LHS
+
+    return ratio
 
 # (****) Update density (phi) at a position (m,n) for timestep k+1 on DL. [non-d-tube update] (****)
 @njit
@@ -342,7 +426,8 @@ def j_r_r(phi, k, m, n, d_radius, rings):
         next_ring = 0
     else:
         next_ring = phi[k][m+1][n]
-    return -1 * ((next_ring - curr_ring) / d_radius)
+    result = -1 * ((next_ring - curr_ring) / d_radius)
+    return result
 
 
 # (****)  (****)
@@ -456,13 +541,16 @@ def calc_loss_mass_j_r_r(phi, k, d_radius, d_theta, rings, rays):
     :param k: (int) time-point
     :param d_radius: (float) delta_radius
     :param d_theta: (float) delta_theta
-    :param rings: (int) # of radial rings in the domain
+    :param position: (int)
+    :param rings (int)
     :param rays: (int) # of angular rays in the domain
     :return: total mass exiting the final ring of patches
     """
-    total_sum = 0
+    total_sum = 0.0
     for n in range(rays):
-        total_sum += j_r_r(phi, k, rings-2, n, d_radius, 0)
+        J_n = j_r_r(phi, k, rings-2, n, d_radius, 0)
+        total_sum += J_n
+
     total_sum *= rings * d_radius * d_theta
 
     return total_sum

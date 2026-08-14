@@ -2,7 +2,7 @@ from . import numerical_tools as num, njit, sys_config, np, supplements as sup, 
 from numba.typed import List
 from time import perf_counter
 
-ENABLE_JIT = sys_config.ENABLE_NJIT
+ENABLE_JIT = True
 
 
 def _launch_time_analysis_MFPT(RG, RY, V, W, T, N_List, dTUBE=0.0, SingleStep=False, MassCheckpoint=10 ** 6, iters=1,
