@@ -1,0 +1,78 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\sisetup{round-mode=places, round-precision=6, table-format=1.6}
+
+\title{Characteristic-Time Analysis:\\ Retained Mass versus Microtubule Count}
+\date{15 August 2026}
+\author{}
+
+\begin{document}
+\maketitle
+
+\section*{Parameters}
+
+\noindent
+Common to every run in both tables:
+
+\medskip
+\noindent
+\begin{tabular}{ll}
+\toprule
+Advective velocity            & $v = 10^{4}$ \\
+Switch rates                  & $a = b = w = 100$ \\
+Dimensionless solution time   & $T = 1$ \\
+Domain radius                 & $R = 1$ \\
+Diffusion coefficient         & $D = 1$ \\
+Microtubule extraction width  & $d_{\mathrm{tube}} = 0$ \\
+Initial condition             & centred \\
+\bottomrule
+\end{tabular}
+
+\bigskip
+\noindent
+$N$ denotes the number of evenly spaced microtubules, $t^{*}$ the
+characteristic time, and $m^{*}$ the retained mass evaluated at $t^{*}$.
+
+\section*{Domain grid: $96 \times 96$}
+
+\noindent
+\begin{tabular}{
+    S[table-format=2.0]
+    S[table-format=1.6]
+    S[table-format=1.6]
+    S[table-format=2.2]
+  }
+\toprule
+{$N$} & {$t^{*}$} & {$m^{*}$} & {Wall time (hr)} \\
+\midrule
+ 4 & 0.073186 & 0.057734 & 10.61 \\
+ 8 & 0.067073 & 0.147390 & 10.72 \\
+16 & 0.059530 & 0.377297 & 10.88 \\
+24 & 0.054723 & 0.578565 & 11.09 \\
+\bottomrule
+\end{tabular}
+
+\section*{Domain grid: $48 \times 48$}
+
+\noindent
+\begin{tabular}{
+    S[table-format=2.0]
+    S[table-format=1.6]
+    S[table-format=1.6]
+    S[table-format=2.1]
+  }
+\toprule
+{$N$} & {$t^{*}$} & {$m^{*}$} & {Wall time (min)} \\
+\midrule
+ 4 & 0.070148 & 0.096793 & 10.5 \\
+ 8 & 0.061825 & 0.295470 & 10.7 \\
+16 & 0.052357 & 0.670035 & 11.1 \\
+24 & 0.046611 & 0.858021 & 11.6 \\
+\bottomrule
+\end{tabular}
+
+\end{document}

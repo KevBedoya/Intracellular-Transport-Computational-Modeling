@@ -142,11 +142,17 @@ def _char_time_pkg_on_path():
     return pkg
 
 
-def _run_one_char_time_job(n_tubes):
-    """Run a single ``collect_char_time_mass`` job for ``n_tubes`` microtubules.
+def _run_one_char_time_job(job):
+    """Run a single ``collect_char_time_mass`` job.
+
+    ``job`` is ``(n_tubes, rings, rays)``.  The grid is passed *through the
+    argument* rather than read from the CHAR_TIME_SWEEP global on purpose: the
+    "spawn" start method re-imports this module in every child, so a grid that
+    the parent overrode at runtime would not reach the workers -- they would
+    silently fall back to the module-level default.
 
     Executed in its own process (see CHAR_TIME_SWEEP notes above).  Must stay a
-    module-level function so it is picklable by the "spawn" start method.
+    module-level function so it is picklable by "spawn".
 
     Returns ``(n_tubes, elapsed_seconds)``; the caller prints the summary so the
     four workers do not interleave their reports mid-line.
@@ -155,11 +161,12 @@ def _run_one_char_time_job(n_tubes):
 
     import numpy as np
 
+    n_tubes, rings, rays = job
+
     _char_time_pkg_on_path()
     from launch_functions import launch
 
     cfg = CHAR_TIME_SWEEP
-    rings, rays = cfg["rings"], cfg["rays"]
 
     # Evenly-spaced microtubule angular positions, e.g. for 96 rays and 24
     # tubes: linspace(0, 96 - 96//24, 24) -> every 4th ray.
@@ -173,24 +180,36 @@ def _run_one_char_time_job(n_tubes):
                                   cfg["T"], N_LIST, show_plt=False)
     elapsed = _time.perf_counter() - start
 
-    print(f"[{n_tubes:>2} tubes] done in {elapsed/3600:.2f} hr", flush=True)
+    print(f"[{n_tubes:>2} tubes] done in {elapsed/3600:.2f} hr "
+          f"({elapsed/60:.1f} min)", flush=True)
     return n_tubes, elapsed
 
 
-def run_char_time_sweep_concurrent():
+def run_char_time_sweep_concurrent(rings=None, rays=None):
     """Run the four microtubule configurations as concurrent processes.
 
     Uses one worker per configuration so all four proceed in parallel on
     separate cores.  Wall time for the whole sweep is therefore roughly the
     cost of a single job rather than the sum of all four.
+
+    ``rings`` / ``rays`` override the grid in CHAR_TIME_SWEEP for this run, so
+    the same sweep can be repeated at another resolution without editing the
+    module.  The override is forwarded to each worker as part of its job tuple
+    (see _run_one_char_time_job on why it cannot go through the global).
+
+    Cost scales steeply with the grid: dT = 0.1*dThe^2*dRad^2/(2D) means
+    K ~ G^4 and total work ~ G^6 for a GxG grid, so halving the grid from 96 to
+    48 cuts each job by roughly 64x (measured: 43.0M -> 2.69M timesteps).
     """
     import time as _time
 
     cfg = CHAR_TIME_SWEEP
+    rings = cfg["rings"] if rings is None else rings
+    rays = cfg["rays"] if rays is None else rays
     n_jobs = len(CHAR_TIME_TUBE_COUNTS)
 
     print(f"=== concurrent characteristic-time sweep ===")
-    print(f"grid          : {cfg['rings']}x{cfg['rays']}")
+    print(f"grid          : {rings}x{rays}")
     print(f"v list        : {cfg['v_list']}")
     print(f"a = b         : {cfg['w']}")
     print(f"T             : {cfg['T']}")
@@ -202,19 +221,20 @@ def run_char_time_sweep_concurrent():
 
     # "spawn" is the only start method on Windows and keeps each worker's
     # numba/matplotlib state fully isolated.
+    jobs = [(n, rings, rays) for n in CHAR_TIME_TUBE_COUNTS]
     ctx = multiprocessing.get_context("spawn")
     with ctx.Pool(processes=n_jobs) as pool:
-        results = pool.map(_run_one_char_time_job, CHAR_TIME_TUBE_COUNTS)
+        results = pool.map(_run_one_char_time_job, jobs)
 
     sweep_elapsed = _time.perf_counter() - sweep_start
 
     print()
-    print("=== sweep complete ===")
+    print(f"=== sweep complete ({rings}x{rays}) ===")
     print(f"{'tubes':>6} {'wall time':>12}")
     serial_total = 0.0
     for n_tubes, elapsed in results:
         serial_total += elapsed
-        print(f"{n_tubes:>6} {elapsed/3600:>9.2f} hr")
+        print(f"{n_tubes:>6} {elapsed/3600:>9.2f} hr ({elapsed/60:.1f} min)")
     print()
     print(f"sum of job times (what a sequential run would cost): "
           f"{serial_total/3600:.2f} hr")
@@ -297,13 +317,21 @@ if __name__ == "__main__":
     # processes do not re-run the top-level application logic.
     # multiprocessing.freeze_support()
 
-    # --- Concurrent characteristic-time sweep (96x96) -----------------------
+    # --- Concurrent characteristic-time sweep -------------------------------
     # Runs the 24 / 16 / 8 / 4 microtubule configurations as four concurrent
     # processes.  See the CHAR_TIME_SWEEP block above for why this is safe and
     # what it costs.  multiprocessing.freeze_support() is required here because
     # the "spawn" start method re-imports this module in every child.
+    #
+    # Optional square-grid override, for repeating the sweep at another
+    # resolution without editing the module:
+    #     python main.py            -> CHAR_TIME_SWEEP default (96x96)
+    #     python main.py 48         -> 48x48
     multiprocessing.freeze_support()
-    run_char_time_sweep_concurrent()
+    _grid = None
+    if len(sys.argv) >= 2 and sys.argv[1].isdigit():
+        _grid = int(sys.argv[1])
+    run_char_time_sweep_concurrent(rings=_grid, rays=_grid)
 
     # --- Off-centered super-computation run ---------------------------------
     # run_super_comp_off_center()
