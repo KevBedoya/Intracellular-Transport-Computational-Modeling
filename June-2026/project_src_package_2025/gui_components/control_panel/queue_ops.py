@@ -101,7 +101,12 @@ class QueueMixin:
         inputs = job.params
 
         from project_src_package_2025.multiprocessing_tools import subprocess_launcher
-        args = subprocess_launcher.build_worker_args(computation_name, json.dumps(inputs))
+        from project_src_package_2025.multiprocessing_tools import compute_worker
+        # Per-job result file; see compute_worker for why the shared
+        # result.json was unsafe once more than one job can be in flight.
+        self.job_id = compute_worker.new_job_id()
+        args = subprocess_launcher.build_worker_args(
+            computation_name, json.dumps(inputs), self.job_id)
         self.process = subprocess_launcher.launch_subprocess(args)
 
         self.poll_timer = QTimer()
@@ -117,9 +122,8 @@ class QueueMixin:
             return
         self.poll_timer.stop()
 
-        from system_configuration import file_paths as fp
-        output_dir = fp.json_output
-        result_file = os.path.join(output_dir, f"result.json")
+        from project_src_package_2025.multiprocessing_tools import compute_worker
+        result_file = compute_worker.result_path(self.job_id)
 
         try:
             if not os.path.join(result_file) or os.path.getsize(result_file) == 0:

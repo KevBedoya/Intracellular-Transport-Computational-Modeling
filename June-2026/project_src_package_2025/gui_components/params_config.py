@@ -268,6 +268,124 @@ PARAMETER_SCHEMAS = {
             ("show_plt", False)
         ]
     },
+
+    "Characteristic Time (mass vs v)": {
+        "required": [
+            ("rg_param", ""),
+            ("ry_param", ""),
+            ("v_LIST", ""),
+            ("w_param", ""),
+            ("T_param", ""),
+            ("N_LIST", ""),
+        ],
+        "default": [
+            ("MA_collection_factor", int(5)),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("d_tube", 0.0),
+            ("center_init_cond", True),
+            ("m_init", 0),
+            ("n_init", 0),
+            ("show_plt", False)
+        ],
+        "approach": ["time-dependent"]
+    },
+
+    "Jrr Mass Sum Over Time": {
+        "required": [
+            ("rg_param", ""),
+            ("ry_param", ""),
+            ("v_param", ""),
+            ("w_param", ""),
+            ("T_param", ""),
+            ("N_LIST", ""),
+        ],
+        "default": [
+            ("collection_factor", int(5)),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("d_tube", 0.0),
+            ("collection_factor_limit", int(1e3)),
+            ("save_png", True),
+            ("show_plt", False),
+            ("center_init_cond", True),
+            ("m_init", 0),
+            ("n_init", 0)
+        ],
+        "approach": ["time-dependent"]
+    },
+
+    "BC Parameter Dependence (w sweep)": {
+        "required": [
+            ("rg_param", ""),
+            ("ry_param", ""),
+            ("v_param", ""),
+            ("T_param", ""),
+            ("N_LIST", ""),
+            ("w_LIST", ""),
+            ("checkpoint", ""),
+        ],
+        "default": [
+            ("T_fixed_ring_seg", 0.5),
+            ("d_tube", 0.0),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("save_png", True),
+            ("show_plt", False),
+            ("center_init_cond", True),
+            ("m_init", 0),
+            ("n_init", 0)
+        ],
+        "approach": ["time-dependent"]
+    },
+
+    "BC Parameter Dependence (grid-size sweep)": {
+        "required": [
+            ("v_param", ""),
+            ("T_param", ""),
+            ("w_param", ""),
+            ("N_amount", ""),
+            ("checkpoint", ""),
+            ("grid_list", ""),
+        ],
+        "default": [
+            ("T_fixed_ring_seg", 0.5),
+            ("d_tube", 0.0),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("save_png", True),
+            ("show_plt", False)
+        ],
+        "approach": ["time-dependent"]
+    },
+
+    "Angular Trajectory Matrix": {
+        "required": [
+            ("rg_param", ""),
+            ("ry_param", ""),
+            ("v_param", ""),
+            ("w_param", ""),
+            ("N_LIST", ""),
+            ("checkpoint_collect_container", ""),
+        ],
+        "default": [
+            ("mass_retention_threshold", 0.01),
+            ("d_tube", 0.0),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("save_png", True),
+            ("show_plt", False),
+            ("center_init_cond", True),
+            ("m_init", 0),
+            ("n_init", 0)
+        ],
+        "approach": ["mass-dependent"]
+    },
 }
 
 PARAMETER_HINTS = {
@@ -295,6 +413,16 @@ PARAMETER_HINTS = {
     "mass_retention_threshold": "mass_retention_threshold: amount of mass until termination of method. (float)",
     "mass_threshold": "mass_threshold: amount of mass until termination of method. (float)",
     "checkpoint_collect_container": "checkpoint_collect_container: Provide as a list of floats: [], s.t each entry denotes a time-stamp (approach=2) OR a mass-stamp for data collection (approach=1).",
-    "approach": "approach: (1) For mass dependent data collection, (2) For time dependent data collection. (int)"
+    "approach": "approach: (1) For mass dependent data collection, (2) For time dependent data collection. (int)",
+    "v_LIST": "v_LIST: Advective velocities to sweep. Provide as a list of floats: []",
+    "w_LIST": "w_LIST: Switch rates (a=b) to sweep. Provide as a list of floats: []",
+    "grid_list": "grid_list: Square grid sizes to sweep. Provide as a list of ints: []",
+    "N_amount": "N_amount: Number of evenly spaced microtubules. (int)",
+    "checkpoint": "checkpoint: Time- or mass-stamp at which data is collected. (float)",
+    "collection_factor": "collection_factor: # of time-steps in between data collection points. (int)",
+    "collection_factor_limit": "collection_factor_limit: Limit on collection_factor. (int)",
+    "center_init_cond": "center_init_cond: Seed unit mass in the central patch. Set False to seed at (m_init, n_init). (boolean)",
+    "m_init": "m_init: Ring index for an off-centred initial condition, in [0, rg_param-1]. (int)",
+    "n_init": "n_init: Ray index for an off-centred initial condition, in [0, ry_param-1]. (int)"
 }
 

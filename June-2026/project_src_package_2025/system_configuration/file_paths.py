@@ -12,7 +12,14 @@ DATA_OUTPUT = Path.home() / 'BiophysicsAppData'
 DATA_OUTPUT.mkdir(exist_ok=True)
 
 # Create absolute paths using BASE_DIR
-general_output = BASE_DIR / "data_output"
+#
+# ITCM_OUTPUT_ROOT overrides the output tree for a single process. The job
+# worker sets it per job, so concurrent jobs write into disjoint directories
+# and each job's outputs are attributable to it. Without the override every
+# job writes into one shared tree, and with several running at once there is
+# no way to tell afterwards which run produced which directory. Unset (the
+# desktop GUI, direct scripts) the historical location is used unchanged.
+general_output = Path(os.environ.get("ITCM_OUTPUT_ROOT") or (BASE_DIR / "data_output"))
 mfpt_results_output = general_output / "mfpt-results"
 heatmap_output = general_output / "heatmaps"
 phi_v_theta_output = general_output / "diffusive-v-theta"

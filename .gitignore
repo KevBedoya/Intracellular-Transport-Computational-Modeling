@@ -1,0 +1,15 @@
+# Job-server runtime state (see June-2026/server/)
+# The job database and per-job output trees are generated at run time and can
+# reach hundreds of MB per job; results worth keeping are promoted into
+# results/ deliberately, not committed wholesale from the working tree.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+June-2026/project_src_package_2025/data_output/jobs/
+June-2026/server/__pycache__/
+
+# NOTE: compiled .pyc files are already tracked under the older snapshot
+# directories (51 of them). They are deliberately not ignored here: a blanket
+# __pycache__ rule would claim to exclude files git still tracks, which is
+# more confusing than the status quo. Untracking them belongs with the
+# snapshot-consolidation work, not here.

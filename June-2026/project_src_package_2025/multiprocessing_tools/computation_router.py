@@ -18,7 +18,13 @@ COMPUTATION_FUNCTIONS = {
     "Full Analysis (time t dep.)": launch.launch_super_comp_I,
 
     "Time Until Mass Depletion": launch.output_time_until_mass_depletion,
-    "Mass Analysis": launch.collect_mass_analysis
+    "Mass Analysis": launch.collect_mass_analysis,
+
+    "Characteristic Time (mass vs v)": launch.collect_char_time_mass,
+    "Jrr Mass Sum Over Time": launch.collect_Jrr_mass_sum_over_time,
+    "BC Parameter Dependence (w sweep)": launch.collect_BC_param_dependence,
+    "BC Parameter Dependence (grid-size sweep)": launch.collect_BC_param_dependence_grid_size,
+    "Angular Trajectory Matrix": launch.compute_ang_traj_mat,
 }
 # "Full Analysis": launch.launch_super_comp_I
 
@@ -27,11 +33,29 @@ def parse_input(value):
     """
     Attempts to convert a string input into its appropriate Python type.
     Supports float, int, bool, list, None, etc.
+
+    Non-string values are returned unchanged.  The desktop GUI supplies every
+    parameter as text from a form field, but a JSON caller (the HTTP API and
+    the job worker) supplies real ints, floats, lists and bools -- those must
+    pass through untouched rather than be re-parsed.
     """
+    if not isinstance(value, str):
+        return value
     try:
         return ast.literal_eval(value)
     except (ValueError, SyntaxError):
         return value.strip()
+
+
+def _is_blank(value):
+    """True for an omitted parameter: an empty/whitespace string, or None.
+
+    Blank entries are dropped so the callee's own default applies.  Only
+    strings are treated as blankable; 0 and False are real values.
+    """
+    if value is None:
+        return True
+    return isinstance(value, str) and value.strip() == ""
 
 
 def run_selected_computation(computation_name, param_dict):
@@ -48,7 +72,7 @@ def run_selected_computation(computation_name, param_dict):
     parsed_inputs = {
         key: parse_input(val)
         for key, val in param_dict.items()
-        if val.strip() != ""
+        if not _is_blank(val)
     }
 
     result = func(**parsed_inputs)

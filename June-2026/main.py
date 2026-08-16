@@ -25,16 +25,17 @@ import json
 def _run_worker(argv):
     """Run a single computation in worker mode and exit.
 
-    ``argv`` is ``sys.argv``; positions 2 and 3 hold the computation name and
-    the JSON-encoded parameter dict, matching the contract used by
-    ``multiprocessing_tools.subprocess_launcher``.
+    ``argv`` is ``sys.argv``; positions 2, 3 and 4 hold the computation name,
+    the JSON-encoded parameter dict and the job id, matching the contract used
+    by ``multiprocessing_tools.subprocess_launcher``.
     """
 
     from multiprocessing_tools.compute_worker import compute_and_send
 
     computation_name = argv[2]
     inputs = json.loads(argv[3])
-    compute_and_send(computation_name, inputs)
+    job_id = argv[4]
+    compute_and_send(computation_name, inputs, job_id)
 
 
 def run_main():
@@ -340,7 +341,7 @@ if __name__ == "__main__":
     # Re-enable this block (and comment out the call above) to restore the
     # normal desktop-app entry point.
     #
-    # if len(sys.argv) >= 4 and sys.argv[1] == "--worker":
+    # if len(sys.argv) >= 5 and sys.argv[1] == "--worker":
     #     _run_worker(sys.argv)
     # elif len(sys.argv) >= 2 and sys.argv[1] == "--verify":
     #     run_verification_examples()

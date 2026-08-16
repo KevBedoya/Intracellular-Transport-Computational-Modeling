@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 
-def build_worker_args(computation_name, inputs_json):
+def build_worker_args(computation_name, inputs_json, job_id):
     """Return the argv that launches a single computation in a child process.
 
     The invocation differs between source and frozen (PyInstaller) runs:
@@ -16,25 +16,46 @@ def build_worker_args(computation_name, inputs_json):
       the ``--worker`` sentinel handled in ``main.py``.
 
     ``inputs_json`` must already be a JSON string (the parameter dict).
+    ``job_id`` scopes the result file so concurrent jobs cannot overwrite one
+    another; mint one with ``compute_worker.new_job_id()``.
     """
     if getattr(sys, "frozen", False):
-        return [sys.executable, "--worker", computation_name, inputs_json]
+        return [sys.executable, "--worker", computation_name, inputs_json, job_id]
     return [
         sys.executable,
         "-m",
         "multiprocessing_tools.subprocess_launcher",
         computation_name,
         inputs_json,
+        job_id,
     ]
 
 
-def launch_subprocess(args):
+def launch_subprocess(args, extra_env=None):
+    """Start a worker child process.
 
-    # project_root = "/Users/kbedoya88/Desktop/QC25-Summer/Research/Computational-Biophysics/Comp-Bio-Summer/June-2025"
-    # project_root = "/Users/kbedoya88"
-    # project_root = ""
-    project_root = Path(__file__).resolve().parents[2]
+    ``extra_env`` is merged into the child's environment; the job worker uses
+    it to point ITCM_OUTPUT_ROOT at a per-job output directory.
+
+    The child is run with ``cwd`` at the project root, but ``python -m
+    multiprocessing_tools.subprocess_launcher`` resolves against the *package*
+    directory one level down -- so the import path has to be supplied
+    explicitly. Relying on ``cwd`` alone made the child fail with
+    ``ModuleNotFoundError: No module named 'multiprocessing_tools'``, since the
+    package is not directly under the project root. Setting PYTHONPATH keeps
+    the working directory (which computations use for their relative output
+    paths) independent of where the package is importable from.
+    """
+    package_dir = Path(__file__).resolve().parents[1]   # project_src_package_2025
+    project_root = Path(__file__).resolve().parents[2]  # repo working directory
+
     env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(package_dir), str(project_root),
+                    env.get("PYTHONPATH", "")) if p
+    )
+    if extra_env:
+        env.update({k: str(v) for k, v in extra_env.items()})
 
     return subprocess.Popen(
         args,
@@ -50,4 +71,5 @@ if __name__ == "__main__":
 
     computation_name = sys.argv[1]
     inputs = json.loads(sys.argv[2])
-    compute_and_send(computation_name, inputs)
+    job_id = sys.argv[3]
+    compute_and_send(computation_name, inputs, job_id)
