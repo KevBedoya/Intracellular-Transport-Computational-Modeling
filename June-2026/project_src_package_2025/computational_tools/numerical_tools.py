@@ -340,9 +340,15 @@ def u_tube_rect(rho, phi, k, m, n, a, b, v, d_time, d_radius, d_theta, d_tube):
     """
 
     j_l = v * rho[k, m, n]
-    N = phi.shape[2]
+    M = phi.shape[1]        # rings
+    N = phi.shape[2]        # rays
 
-    if m == N - 1:
+    # m is a RING index, so the outermost-ring test compares against the ring
+    # count.  This previously read `m == len(phi[k][m]) - 1`, i.e. it compared
+    # the ring index against the number of RAYS.  On a square grid the two are
+    # equal and the bug is invisible; on a non-square grid it truncated the
+    # advective flux at the wrong ring (rg > ry) or never at all (rg < ry).
+    if m == M - 1:
         j_r = 0
     else:
         j_r = v * rho[k, m+1, n]

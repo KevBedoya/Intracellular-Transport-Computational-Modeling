@@ -89,6 +89,38 @@ def test_stencil_matches_golden():
     assert not failures, "stencil output changed:\n  " + "\n  ".join(failures)
 
 
+def test_outermost_ring_cutoff_is_ring_indexed():
+    """u_tube_rect must cut the advective flux at the last RING, not the last RAY.
+
+    Regression test for a bug that was invisible on square grids: the check
+    read `m == len(phi[k][m]) - 1`, comparing the ring index against the ray
+    count.  On a grid with rings > rays that cut the flux at the wrong ring
+    AND read one past the end of the array at the true outermost ring (an
+    IndexError under NUMBA_BOUNDSCHECK=1, silent corruption without it).
+
+    The golden cases above do not catch this: they start from a centred pulse
+    and run only 30 steps, so the outer rings are still exactly zero and both
+    branches agree.  This probe fills the domain so the branch actually shows.
+    """
+    rg, ry = 64, 48                      # rings > rays
+    rho = np.zeros((2, rg, ry))
+    phi = np.zeros((2, rg, ry))
+    rho[0] = 1.0
+    phi[0] = 1.0
+    dRad, dThe, dT = 1.0 / rg, 2 * np.pi / ry, 1e-6
+
+    def at(m):
+        return num.u_tube_rect(rho, phi, 0, m, 0, 100.0, 100.0, -1e4,
+                               dT, dRad, dThe, 0.0)
+
+    # The cutoff sets j_r = 0, which changes the result substantially.
+    assert at(rg - 1) < 0.5, "no flux cutoff at the outermost ring"
+    # Neighbouring interior rings, including the old (wrong) ray-count index,
+    # must all be uncut.
+    for m in (ry - 2, ry - 1, ry, rg - 2):
+        assert at(m) > 0.9, f"unexpected flux cutoff at interior ring m={m}"
+
+
 def _regenerate():
     out = {}
     for idx, case in enumerate(CASES):
@@ -107,3 +139,5 @@ if __name__ == "__main__":
     else:
         test_stencil_matches_golden()
         print(f"OK: all {len(CASES)} cases bit-identical to the golden fixture")
+        test_outermost_ring_cutoff_is_ring_indexed()
+        print("OK: outermost-ring flux cutoff is ring-indexed")
