@@ -19,7 +19,7 @@ def comp_mfpt_by_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b, v
     else:
         central_patch = 0.0
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
     v_param *= -1
     k = 0
     mass_retained = 0
@@ -70,7 +70,7 @@ def comp_mfpt_by_time(rg_param, ry_param, switch_param_a, switch_param_b, v_para
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     MFPT = 0
     mass_retained = 0
@@ -126,7 +126,7 @@ def comp_mfpt_by_time_points_mass_dep(rg_param, ry_param, switch_param_a, switch
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     MFPT = 0
     mass_retained = 0
@@ -191,7 +191,7 @@ def comp_mfpt_by_time_points_time_dep(rg_param, ry_param, switch_param_a, switch
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     MFPT = 0
     mass_retained = 0

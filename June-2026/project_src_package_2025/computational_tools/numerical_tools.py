@@ -20,7 +20,7 @@ def closest_multiple(n: int, k: int):
 
 # (****) Main numerical PDE solver implemented under the 2-step (time-step) method (****)
 @njit
-def comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST,
+def comp_DL_AL_kp1_2step(ry_param, rg_param, d_map, D_LAYER, central_patch, A_LAYER, N_LIST,
                          dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube):
     m = 0
     net_current_out = 0
@@ -34,11 +34,16 @@ def comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_L
             if m == rg_param - 1:
                 D_LAYER[1][m][n] = 0
             else:
-                if n in d_list[m]:
+                # d_map is the dense form of the old List-of-Dicts extraction
+                # mapping (struct_init.build_d_tube_map_dense).  The previous
+                # `if n in d_list[m]` was a numba typed-Dict containment check
+                # run once per patch per timestep; this is a single array read
+                # carrying identical information.
+                corr_MT_pos = d_map[m, n]
+                if corr_MT_pos >= 0:
                     # n denotes a discrete position (an extraction region ray) within an extraction region centered at a microtubule (indices contained in N_LIST)
                     # if the iteration steps on an extraction region ray at ring m, then:
-                    # int(d_list[m][n]) is the corresponding microtubule position of the extraction region ray (n) at ring (m)
-                    corr_MT_pos = int(d_list[m][n])
+                    # corr_MT_pos is the corresponding microtubule position of the extraction region ray (n) at ring (m)
 
                     D_LAYER[1][m][n] = u_density_rect(D_LAYER, 0, m, n,
                                                       dRad, dThe, dT, central_patch,
@@ -82,7 +87,7 @@ def find_max_with_time(filepath):
     return t[left], f[left]
 
 @njit
-def comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST,
+def comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_map, D_LAYER, central_patch, A_LAYER, N_LIST,
                          dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube):
     m = 0
     while m < rg_param:
@@ -96,11 +101,13 @@ def comp_DL_AL_kp1_2step_mass_loss_j_r_r(ry_param, rg_param, d_list, D_LAYER, ce
                 D_LAYER[1][m][n] = 0
 
             else:
-                if n in d_list[m]:
+                # See comp_DL_AL_kp1_2step: dense extraction map replaces the
+                # per-patch typed-Dict containment check.
+                corr_MT_pos = d_map[m, n]
+                if corr_MT_pos >= 0:
                     # n denotes a discrete position (an extraction region ray) within an extraction region centered at a microtubule (indices contained in N_LIST)
                     # if the iteration steps on an extraction region ray at ring m, then:
-                    # int(d_list[m][n]) is the corresponding microtubule position of the extraction region ray (n) at ring (m)
-                    corr_MT_pos = int(d_list[m][n])
+                    # corr_MT_pos is the corresponding microtubule position of the extraction region ray (n) at ring (m)
 
                     D_LAYER[1][m][n] = u_density_rect(D_LAYER, 0, m, n,
                                                       dRad, dThe, dT, central_patch,
@@ -150,7 +157,7 @@ def comp_verify_bc(A_layer, D_layer, m_idx, n_idx, w_param):
     return ratio
 
 # (****) Update density (phi) at a position (m,n) for timestep k+1 on DL. [non-d-tube update] (****)
-@njit
+@njit(inline="always")
 def u_density(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho, mt_pos, a, b, tube_placements):
     """
 
@@ -176,7 +183,7 @@ def u_density(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho, mt_p
     :return: particle density at a position (m,n) on the diffusive layer
     """
 
-    current_density = phi[k][m][n]
+    current_density = phi[k, m, n]
 
     component_a = ((m+2) * j_r_r(phi, k, m, n, d_radius, rings)) - ((m+1) * j_l_r(phi, k, m, n, d_radius, central))
 
@@ -187,7 +194,7 @@ def u_density(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho, mt_p
     component_b *= d_time / ((m+1) * d_radius * d_theta)
 
     if n == tube_placements[mt_pos]:
-        component_c = (a * phi[k][m][n]) * d_time - (((b * rho[k][m][n]) * d_time) / ((m+1) * d_radius * d_theta))
+        component_c = (a * phi[k, m, n]) * d_time - (((b * rho[k, m, n]) * d_time) / ((m+1) * d_radius * d_theta))
     else:
         component_c = 0
 
@@ -195,7 +202,7 @@ def u_density(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho, mt_p
 
 
 # (****) Update density (phi) at a position (m,n) for timestep k+1 on DL. [d_tube update] (****)
-@njit
+@njit(inline="always")
 def u_density_rect(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho, mt_pos, a, b, d_tube):
     """
 
@@ -223,7 +230,7 @@ def u_density_rect(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho,
 
     j_max = np.ceil((d_tube / ((m + 1) * d_radius * d_theta)) - 0.5)
 
-    current_density = phi[k][m][n]
+    current_density = phi[k, m, n]
 
     component_a = ((m+2) * j_r_r(phi, k, m, n, d_radius, rings)) - ((m+1) * j_l_r(phi, k, m, n, d_radius, central))
 
@@ -233,7 +240,7 @@ def u_density_rect(phi, k, m, n, d_radius, d_theta, d_time, central, rings, rho,
 
     component_b *= d_time / ((m+1) * d_radius * d_theta)
 
-    component_c = a * phi[k][m][n] * d_time - (b * rho[k][m][mt_pos] * d_time) / ((1 + 2 * j_max) * (m+1) * d_radius * d_theta)
+    component_c = a * phi[k, m, n] * d_time - (b * rho[k, m, mt_pos] * d_time) / ((1 + 2 * j_max) * (m+1) * d_radius * d_theta)
 
     return current_density - component_a - component_b - component_c
 
@@ -257,7 +264,7 @@ def u_center(phi, k, d_radius, d_theta, d_time, curr_central, rho, tube_placemen
     """
 
     total_sum = 0
-    for n in range(len(phi[0][0])):
+    for n in range(phi.shape[2]):
         total_sum += j_l_r(phi, k, 0, n, d_radius, curr_central)
 
     total_sum *= (d_theta * d_time) / (np.pi * d_radius)
@@ -267,7 +274,7 @@ def u_center(phi, k, d_radius, d_theta, d_time, curr_central, rho, tube_placemen
 
     for i in range(len(tube_placements)):
         angle = tube_placements[i]
-        j_l = rho[k][0][angle] * v
+        j_l = rho[k, 0, angle] * v
         advective_sum += (abs(j_l) * d_time) / (np.pi * d_radius * d_radius)
 
     return diffusive_sum + advective_sum
@@ -311,7 +318,7 @@ def u_tube(rho, phi, k, m, n, a, b, v, d_time, d_radius, d_theta):
 
 
 # (****)  (****)
-@njit
+@njit(inline="always")
 def u_tube_rect(rho, phi, k, m, n, a, b, v, d_time, d_radius, d_theta, d_tube):
     """
 
@@ -332,24 +339,24 @@ def u_tube_rect(rho, phi, k, m, n, a, b, v, d_time, d_radius, d_theta, d_tube):
     :return: particle density at position (m,n) on the advective layer.
     """
 
-    j_l = v * rho[k][m][n]
-    if m == len(phi[k][m]) - 1:
+    j_l = v * rho[k, m, n]
+    N = phi.shape[2]
+
+    if m == N - 1:
         j_r = 0
     else:
-        j_r = v * rho[k][m+1][n]
+        j_r = v * rho[k, m+1, n]
 
-    component_a = (rho[k][m][n] - ((j_r - j_l) * (1/d_radius)) * d_time)
-
-    N = len(phi[k][m])
+    component_a = (rho[k, m, n] - ((j_r - j_l) * (1/d_radius)) * d_time)
 
     j_max = np.ceil((d_tube / ((m + 1) * d_radius * d_theta)) - 0.5)
 
     component_b = 0
     for j in range(-j_max, j_max + 1):
-        component_b += phi[k][m][(n + j) % N]
+        component_b += phi[k, m, (n + j) % N]
     component_b *= a * (m+1) * (d_radius * d_theta * d_time)
 
-    component_c = b * rho[k][m][n] * d_time
+    component_c = b * rho[k, m, n] * d_time
 
     return component_a + component_b - component_c
 
@@ -444,7 +451,15 @@ def compute_init_cond_patch(rg_param, ry_param, m, domain_radius=1.0):
 
 
 # (****)  (****)
-@njit
+# The four current functions below are the innermost hot path: each is called
+# once per patch per timestep (rg*ry*K times per run).  Two deliberate details:
+#   * indexing is phi[k, m, n], not phi[k][m][n].  The chained form builds two
+#     throwaway intermediate array views on every access; the tuple form is a
+#     single address computation.
+#   * inline="always" lets numba inline these into the calling stencil at the
+#     IR level, which measurably beats leaving it to LLVM here.
+# Neither changes the arithmetic -- results are bit-for-bit identical.
+@njit(inline="always")
 def j_r_r(phi, k, m, n, d_radius, rings):
     """
 
@@ -461,17 +476,17 @@ def j_r_r(phi, k, m, n, d_radius, rings):
     :param rings: (int) # of radial rings in the domain
     :return: rightwards radial current
     """
-    curr_ring = phi[k][m][n]
+    curr_ring = phi[k, m, n]
     if m == rings - 1:
         next_ring = 0
     else:
-        next_ring = phi[k][m+1][n]
+        next_ring = phi[k, m+1, n]
     result = -1 * ((next_ring - curr_ring) / d_radius)
     return result
 
 
 # (****)  (****)
-@njit
+@njit(inline="always")
 def j_l_r(phi, k, m, n, d_radius, central):
     """
 
@@ -488,16 +503,16 @@ def j_l_r(phi, k, m, n, d_radius, central):
     :param central (float) the current particle density at the center
     :return: leftwards radial current
     """
-    curr_ring = phi[k][m][n]
+    curr_ring = phi[k, m, n]
     if m == 0:
         prev_ring = central
     else:
-        prev_ring = phi[k][m-1][n]
+        prev_ring = phi[k, m-1, n]
     return -1 * ((curr_ring - prev_ring) / d_radius)
 
 
 # (****)  (****)
-@njit
+@njit(inline="always")
 def j_r_t(phi, k, m, n, d_radius, d_theta):
     """
     Calculates the rightwards angular current
@@ -513,12 +528,14 @@ def j_r_t(phi, k, m, n, d_radius, d_theta):
     :param d_theta: (float) delta-theta
     :return: rightwards angular current
     """
-    b = len(phi[k][m])
-    return -1 * (phi[k][m][(n+1) % b] - phi[k][m][n]) / ((m+1) * d_radius * d_theta)
+    # phi.shape[2] is the ray count -- a constant.  The previous len(phi[k][m])
+    # built two intermediate array views to read it, once per patch per step.
+    b = phi.shape[2]
+    return -1 * (phi[k, m, (n+1) % b] - phi[k, m, n]) / ((m+1) * d_radius * d_theta)
 
 
 # (****)  (****)
-@njit
+@njit(inline="always")
 def j_l_t(phi, k, m, n, d_radius, d_theta):
     """
        Calculates the leftwards angular current
@@ -534,8 +551,8 @@ def j_l_t(phi, k, m, n, d_radius, d_theta):
        :param d_theta: (float) delta-theta
        :return: leftwards angular current
        """
-    b = len(phi[k][m])
-    return -1 * (phi[k][m][n] - phi[k][m][(n-1) % b]) / ((m+1) * d_radius * d_theta)
+    b = phi.shape[2]
+    return -1 * (phi[k, m, n] - phi[k, m, (n-1) % b]) / ((m+1) * d_radius * d_theta)
 
 
 # (****) Compute delta radius (****)

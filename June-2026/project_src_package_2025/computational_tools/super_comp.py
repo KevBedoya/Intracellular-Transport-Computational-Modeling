@@ -65,7 +65,7 @@ def super_comp_type_I(rg_param, ry_param, switch_param_a, switch_param_b, T_para
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
     print(d_list)
 
     # initialize variables

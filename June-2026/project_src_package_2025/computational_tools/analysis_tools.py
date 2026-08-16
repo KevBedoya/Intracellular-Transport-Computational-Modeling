@@ -40,7 +40,7 @@ def comp_diffusive_angle_snapshots_mass_dep(rg_param, ry_param, switch_param_a, 
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     checkpoint_iter = 0
 
@@ -100,7 +100,7 @@ def comp_diffusive_rad_snapshots_mass_dep(rg_param, ry_param, switch_param_a, sw
 
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     checkpoint_iter = 0
 
@@ -162,7 +162,7 @@ def comp_diffusive_snapshots_mass_dep(rg_param, ry_param, switch_param_a, switch
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     mass_retained = 0
     MFPT = 0
@@ -243,7 +243,7 @@ def comp_diffusive_angle_snapshots_time_dep(rg_param, ry_param, switch_param_a, 
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     checkpoint_iter = 0
 
@@ -317,7 +317,7 @@ def comp_diffusive_angle_snapshots_time_dep_matrix(rg_param, ry_param, switch_pa
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     checkpoint_iter = 0
 
@@ -380,7 +380,7 @@ def comp_BC_analysis_snapshots_time_dep(rg_param, ry_param, switch_param_a, swit
     else:
         central_patch = 0.0
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     k = 0
@@ -448,7 +448,7 @@ def comp_peak_time_mass_loss(rg_param, ry_param, switch_param_a, switch_param_b,
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     mass_retained = 0
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
     k_step = 0
 
     # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -516,7 +516,7 @@ def comp_diffusive_rad_snapshots_time_dep(rg_param, ry_param, switch_param_a, sw
 
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     checkpoint_iter = 0
 
@@ -579,7 +579,7 @@ def comp_diffusive_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch
     K_param = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     mass_retained = 0
     MFPT = 0
@@ -788,7 +788,7 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
     # Initialize the ring position (m) dependent extraction range dictionary
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     # Initialize layer masses
     dl_mass = 1
@@ -858,7 +858,7 @@ def comp_until_mass_depletion(rg_param, ry_param, switch_param_a, switch_param_b
         D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
     v_param *= -1
 
-    d_list = struct_init.build_d_tube_mapping_no_overlap(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
     mass_retained = 0
 
