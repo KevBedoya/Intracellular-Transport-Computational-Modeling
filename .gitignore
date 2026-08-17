@@ -1,18 +1,153 @@
-# Job-server runtime state (see June-2026/server/)
-# The job database and per-job output trees are generated at run time and can
-# reach hundreds of MB per job; results worth keeping are promoted into
-# results/ deliberately, not committed wholesale from the working tree.
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Cython build artifacts
+*.c
+*.cpp
+*.so
+*.pyd
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# PyInstaller
+#  Usually contains files for bundled app
+*.manifest
+*.spec
+# Keep the project's PyInstaller spec under version control (build entry point).
+!Project2025App.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Pyre type checker
+.pyre/
+
+# mypy
+.mypy_cache/
+
+# Profiling
+*.prof
+*.pstats
+cachegrind.out.*
+
+# Logs and dumps
+*.log
+*.out
+*.err
+
+# Editor/IDE settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# VS Code extensions
+.history/
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Swap files
+*.swp
+*.swo
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# PyCharm
+*.iml
+*.ipr
+*.iws
+
+# SQLite and temporary databases
+*.sqlite3
+*.db
+*.db-journal
+
+
+# Generated output. Lives at the repo root (see
+# system_configuration/file_paths.py BASE_DIR) so it stays out of src/.
+# The directory skeleton is kept via .gitkeep files; the results themselves are
+# not committed from here -- anything worth keeping is promoted into results/.
+data_output/*
+!data_output/.gitkeep
+!data_output/*/
+data_output/*/*
+!data_output/*/.gitkeep
+
+data_output/progress-notes
+
+
+# IPython
+profile_default/
+ipython_config.py
+
+data_output/saved_queue_jobs.json
+src/intracellular_transport/gui_components/saved_state.json
+
+/build
+/dist
+/Biophysics_app_1.0.egg-info
+/setup.py
+
+/Makefile
+/MANIFEST.in
+
+/git_push_notify.sh
+/send_push_email.py
+/push_summary.txt
+/saved_queue_jobs.json
+/TransparentApp.icns
+/TransparentApp.iconset
+
+# ---- Job server runtime state (see server/) ----
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
-June-2026/project_src_package_2025/data_output/jobs/
-June-2026/server/__pycache__/
-
-# NOTE: compiled .pyc files are already tracked under the older snapshot
-# directories (51 of them). They are deliberately not ignored here: a blanket
-# __pycache__ rule would claim to exclude files git still tracks, which is
-# more confusing than the status quo. Untracking them belongs with the
-# snapshot-consolidation work, not here.
-
-# Server run logs
-June-2026/server/logs/
+data_output/jobs/
+server/logs/
