@@ -13,3 +13,6 @@ June-2026/server/__pycache__/
 # __pycache__ rule would claim to exclude files git still tracks, which is
 # more confusing than the status quo. Untracking them belongs with the
 # snapshot-consolidation work, not here.
+
+# Server run logs
+June-2026/server/logs/
