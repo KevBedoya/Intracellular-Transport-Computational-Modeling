@@ -1,0 +1,41 @@
+{
+  "api": "http://100.83.174.69:8000",
+  "computation": "Characteristic Time (mass vs v)",
+  "fixed": {
+    "N_tubes": 16,
+    "v": 10000,
+    "w": 100,
+    "T": 1,
+    "domain_radius": 1.0,
+    "D": 1.0,
+    "d_tube": 0.0,
+    "center_init_cond": true
+  },
+  "jobs": [
+    {
+      "grid": 112,
+      "job_id": "ddcbc09340c249f88e54738d55588386",
+      "est_hours": 8.271
+    },
+    {
+      "grid": 96,
+      "job_id": "1cca467141cf491488d1473a8cae8dc5",
+      "est_hours": 3.28
+    },
+    {
+      "grid": 80,
+      "job_id": "319e12bd29634bf19ff3883238234201",
+      "est_hours": 1.098
+    },
+    {
+      "grid": 64,
+      "job_id": "7c3fdde49b42421894feb5de8e252071",
+      "est_hours": 0.288
+    },
+    {
+      "grid": 48,
+      "job_id": "a63699b955bf4059b40675ede6c8b0ab",
+      "est_hours": 0.051
+    }
+  ]
+}
