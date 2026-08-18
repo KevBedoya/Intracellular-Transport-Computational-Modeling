@@ -25,12 +25,18 @@
     logout. An RDP *disconnect* (as opposed to signing out) also preserves a
     session, if you prefer that route.
 
+.NOTES
+    -ExecutionPolicy Bypass is required unless you have already run
+    `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`; by default Windows
+    refuses to run script files at all. Bypass applies to this invocation only
+    and changes no system setting.
+
 .EXAMPLE
-    powershell -File June-2026\server\serve.ps1
-    powershell -File June-2026\server\serve.ps1 -BindLocal -Slots 2
-    powershell -File June-2026\server\serve.ps1 -Detached
-    powershell -File June-2026\server\serve.ps1 -Stop
-    powershell -File June-2026\server\serve.ps1 -Status
+    powershell -ExecutionPolicy Bypass -File server\serve.ps1
+    powershell -ExecutionPolicy Bypass -File server\serve.ps1 -BindLocal -Slots 2
+    powershell -ExecutionPolicy Bypass -File server\serve.ps1 -Detached
+    powershell -ExecutionPolicy Bypass -File server\serve.ps1 -Stop
+    powershell -ExecutionPolicy Bypass -File server\serve.ps1 -Status
 #>
 
 [CmdletBinding()]
@@ -187,8 +193,8 @@ if ($Detached) {
     }
 
     Write-Host "`nThese survive SSH disconnect and logout."
-    Write-Host "Check:  powershell -File `"$PSCommandPath`" -Status"
-    Write-Host "Stop:   powershell -File `"$PSCommandPath`" -Stop"
+    Write-Host "Check:  powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Status"
+    Write-Host "Stop:   powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Stop"
     return
 }
 
