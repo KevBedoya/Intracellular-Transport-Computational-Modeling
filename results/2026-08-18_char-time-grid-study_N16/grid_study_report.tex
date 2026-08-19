@@ -1,0 +1,60 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\title{Characteristic-Time Grid Study\\ Mass at $t^{*}$ versus Grid Size}
+\date{18 August 2026}
+\author{}
+
+\begin{document}
+\maketitle
+
+\section*{Parameters}
+
+\noindent
+Held fixed across every grid:
+
+\medskip
+\noindent
+\begin{tabular}{ll}
+\toprule
+Microtubules & $N = 16$ \\
+Advective velocity & $v = 10^{4}$ \\
+Switch rates & $a = b = w = 100$ \\
+Dimensionless solution time & $T = 1$ \\
+Domain radius & $R = 1.0$ \\
+Diffusion coefficient & $D = 1.0$ \\
+Microtubule extraction width & $d_{\mathrm{tube}} = 0.0$ \\
+Initial condition & centred \\
+\bottomrule
+\end{tabular}
+
+\bigskip
+\noindent
+Microtubules are evenly spaced on each grid, so the ray indices are
+regenerated per grid size while the count stays fixed.
+
+\section*{Results and wall time}
+
+\noindent
+\begin{tabular}{lrrr}
+\toprule
+Grid & {$t^{*}$} & {$m^{*}$} & {Wall time} \\
+\midrule
+$48 \times 48$ & 0.052357 & 0.670035 & 3.8 min \\
+$64 \times 64$ & 0.055390 & 0.546092 & 19.3 min \\
+$80 \times 80$ & 0.057689 & 0.450505 & 1.23 hr \\
+$96 \times 96$ & 0.059530 & 0.377297 & 3.68 hr \\
+$112 \times 112$ & 0.061058 & 0.320804 & 9.32 hr \\
+\bottomrule
+\end{tabular}
+
+\section*{Mass at $t^{*}$ versus grid size}
+
+\begin{center}
+\includegraphics[width=\textwidth]{mass_vs_grid_size.png}
+\end{center}
+
+\end{document}
