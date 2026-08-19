@@ -74,19 +74,31 @@ def _computation_names():
 
 
 def _schema(name):
+    """Schema for one computation, including each field's expected type.
+
+    The type comes from the same table the validator uses, so a form built from
+    this response coerces inputs exactly the way submission will check them.
+    """
     from gui_components.params_config import PARAMETER_SCHEMAS, PARAMETER_HINTS
+    from multiprocessing_tools.computation_router import _expected_type
 
     schema = PARAMETER_SCHEMAS.get(name)
     if schema is None:
         return None
+
+    def kind(param, default=None, has_default=False):
+        t = _expected_type(param, default, has_default)
+        return t.__name__ if t else "unknown"
+
     return {
         "computation": name,
         "required": [
-            {"name": k, "hint": PARAMETER_HINTS.get(k)}
+            {"name": k, "type": kind(k), "hint": PARAMETER_HINTS.get(k)}
             for k, _ in schema.get("required", [])
         ],
         "optional": [
-            {"name": k, "default": v, "hint": PARAMETER_HINTS.get(k)}
+            {"name": k, "default": v, "type": kind(k, v, True),
+             "hint": PARAMETER_HINTS.get(k)}
             for k, v in schema.get("default", [])
         ],
         "approach": schema.get("approach"),
@@ -119,6 +131,21 @@ def index():
     })
 
 
+@app.get("/ui")
+def ui():
+    """Browser front end.
+
+    Served from this same app so it is same-origin with the API: no CORS
+    configuration, no separate deployment, and no build step. The page holds no
+    parameter knowledge of its own -- it builds every form from
+    /computations/<name>, so registering a new computation gives it a working UI
+    with no change here.
+    """
+    from flask import render_template
+
+    return render_template("ui.html")
+
+
 @app.get("/health")
 def health():
     conn = _conn()
@@ -142,6 +169,34 @@ def computation_schema(name):
     return jsonify(schema)
 
 
+@app.get("/helpers/n_list")
+def helper_n_list():
+    """Evenly spaced microtubule ray indices for ?rays=<N>&tubes=<n>.
+
+    Served rather than reimplemented in the browser on purpose: these indices
+    place the microtubules, so a client-side approximation would silently change
+    the physics. numpy.linspace truncates, and rounding diverges whenever the
+    spacing is not exact -- for rays=50, tubes=16 the two differ in 6 of 16
+    positions. This computes it with the same call the solver scripts use.
+    """
+    import numpy as np
+
+    try:
+        rays = int(request.args["rays"])
+        tubes = int(request.args["tubes"])
+    except (KeyError, ValueError):
+        return jsonify({"error": "rays and tubes must both be integers"}), 400
+    if tubes < 2 or rays < 2:
+        return jsonify({"error": "rays and tubes must each be at least 2"}), 400
+    if tubes > rays:
+        return jsonify({"error": f"tubes ({tubes}) cannot exceed rays ({rays})"}), 400
+
+    positions = np.linspace(0, rays - (rays // tubes), tubes, dtype=int).tolist()
+    distinct = len(set(positions)) == len(positions)
+    return jsonify({"rays": rays, "tubes": tubes, "N_LIST": positions,
+                    "distinct": distinct})
+
+
 @app.post("/jobs")
 def submit_job():
     body = request.get_json(silent=True)
@@ -155,11 +210,17 @@ def submit_job():
     if params is None:
         params = {}
 
+    # Validate before touching the store so the response can name the offending
+    # fields individually -- a form needs to know *which* input to highlight,
+    # not just that something was wrong.
+    from multiprocessing_tools.computation_router import validate_params
+
+    problems = validate_params(computation, params)
+    if problems:
+        return jsonify({"error": "invalid parameters", "fields": problems}), 400
+
     conn = _conn()
     try:
-        # jobstore.submit validates the computation name and params type, so a
-        # typo is rejected now rather than hours later at the front of the
-        # queue.
         job_id = jobstore.submit(conn, computation, params,
                                  submitted_by=body.get("submitted_by"))
     except (ValueError, TypeError) as e:

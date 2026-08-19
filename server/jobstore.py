@@ -97,7 +97,8 @@ def submit(conn, computation, params, submitted_by=None, git_sha=None):
     typo is rejected at submission instead of failing hours later when the job
     finally reaches the front of the queue.
     """
-    from multiprocessing_tools.computation_router import COMPUTATION_FUNCTIONS
+    from multiprocessing_tools.computation_router import (
+        COMPUTATION_FUNCTIONS, validate_params)
 
     if computation not in COMPUTATION_FUNCTIONS:
         raise ValueError(
@@ -106,6 +107,14 @@ def submit(conn, computation, params, submitted_by=None, git_sha=None):
         )
     if not isinstance(params, dict):
         raise TypeError(f"params must be a dict, got {type(params).__name__}")
+
+    # Reject a bad parameter set here rather than letting it reach a worker: an
+    # invalid job would otherwise claim a slot and fail mid-solve, which on a
+    # long queue can be hours after submission.
+    problems = validate_params(computation, params)
+    if problems:
+        raise ValueError("invalid parameters: " + "; ".join(
+            f"{k}: {v}" for k, v in sorted(problems.items())))
 
     job_id = uuid.uuid4().hex
     conn.execute(

@@ -58,6 +58,178 @@ def _is_blank(value):
     return isinstance(value, str) and value.strip() == ""
 
 
+# ---------------------------------------------------------------------------
+# Parameter validation
+# ---------------------------------------------------------------------------
+# Submitting a job used to check only the computation *name*. A body missing a
+# required parameter, carrying a wrong-typed value, or naming a parameter that
+# does not exist was accepted, queued, and only failed once a worker had claimed
+# a slot and started solving -- which on a long queue means a typo costs hours.
+# These checks move that failure to submission time.
+#
+# Optional parameters get their expected type from their schema default. Required
+# parameters have no default, so their types are listed explicitly rather than
+# parsed out of the hint strings, which would silently stop working if a hint
+# were reworded.
+_REQUIRED_PARAM_TYPES = {
+    "rg_param": int,
+    "ry_param": int,
+    "N_amount": int,
+    "v_param": float,
+    "w_param": float,
+    "T_param": float,
+    "checkpoint": float,
+    "N_LIST": list,
+    "grid_list": list,
+    "v_LIST": list,
+    "w_LIST": list,
+    "checkpoint_collect_container": list,
+}
+
+# Optional parameters whose default does not imply the accepted type:
+#   Timestamp_List defaults to None but takes a list of times
+#   d_tube is written 0 in some schemas and 0.0 in others; it is a width
+_OPTIONAL_TYPE_OVERRIDES = {
+    "Timestamp_List": list,
+    "d_tube": float,
+}
+
+# Computations whose log-fit window is hard-coded at x1=0.4, x2=0.5, so T must
+# exceed 0.5 or the pre-flight check rejects the run.
+_FIT_WINDOW_MIN_T = 0.5
+_FIT_WINDOW_COMPUTATIONS = {"Characteristic Time (mass vs v)"}
+
+
+def _schema_for(computation_name):
+    from gui_components.params_config import PARAMETER_SCHEMAS
+
+    return PARAMETER_SCHEMAS.get(computation_name, {})
+
+
+def _expected_type(param, default=None, has_default=False):
+    if param in _OPTIONAL_TYPE_OVERRIDES:
+        return _OPTIONAL_TYPE_OVERRIDES[param]
+    if param in _REQUIRED_PARAM_TYPES:
+        return _REQUIRED_PARAM_TYPES[param]
+    if has_default and default is not None:
+        t = type(default)
+        return t if t in (int, float, bool, str, list) else None
+    return None
+
+
+def _coerce(value, expected):
+    """Return (ok, coerced). Accepts the JSON forms a caller realistically sends."""
+    if expected is bool:
+        return (isinstance(value, bool), value)
+    if expected is int:
+        # bool is a subclass of int; a flag is not a grid size.
+        if isinstance(value, bool):
+            return (False, value)
+        if isinstance(value, int):
+            return (True, value)
+        if isinstance(value, float) and float(value).is_integer():
+            return (True, int(value))
+        return (False, value)
+    if expected is float:
+        if isinstance(value, bool):
+            return (False, value)
+        if isinstance(value, (int, float)):
+            return (True, float(value))
+        return (False, value)
+    if expected is list:
+        if isinstance(value, (list, tuple)):
+            return (all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                        for x in value), list(value))
+        return (False, value)
+    if expected is str:
+        return (isinstance(value, str), value)
+    return (True, value)
+
+
+def validate_params(computation_name, params):
+    """Check ``params`` against the computation's schema.
+
+    Returns a mapping of field name to error message; empty means valid. The
+    key ``"_"`` carries errors that are not about one field.
+    """
+    errors = {}
+
+    if computation_name not in COMPUTATION_FUNCTIONS:
+        return {"computation": f"unknown computation {computation_name!r}"}
+    if not isinstance(params, dict):
+        return {"_": f"params must be an object, got {type(params).__name__}"}
+
+    schema = _schema_for(computation_name)
+    required = [k for k, _ in schema.get("required", [])]
+    optional = {k: v for k, v in schema.get("default", [])}
+    known = set(required) | set(optional)
+
+    for key in params:
+        if key not in known:
+            errors[key] = ("not a parameter of this computation; expected one "
+                           "of: " + ", ".join(sorted(known)))
+
+    for key in required:
+        if key not in params or _is_blank(params.get(key)):
+            errors[key] = "required"
+
+    clean = {}
+    for key, value in params.items():
+        if key in errors or key not in known or _is_blank(value):
+            continue
+        has_default = key in optional
+        expected = _expected_type(key, optional.get(key), has_default)
+        if expected is None:
+            clean[key] = value
+            continue
+        ok, coerced = _coerce(value, expected)
+        if not ok:
+            errors[key] = (f"expected {expected.__name__}, got "
+                           f"{type(value).__name__}"
+                           + (" of numbers" if expected is list else ""))
+        else:
+            clean[key] = coerced
+
+    # --- semantic checks, only for cases that cannot be valid ---
+    rg, ry = clean.get("rg_param"), clean.get("ry_param")
+    for key in ("rg_param", "ry_param"):
+        v = clean.get(key)
+        if v is not None and v < 2:
+            errors[key] = "must be at least 2"
+
+    for key in ("T_param", "checkpoint"):
+        v = clean.get(key)
+        if v is not None and v <= 0:
+            errors[key] = "must be positive"
+
+    nlist = clean.get("N_LIST")
+    if isinstance(nlist, list):
+        if not nlist:
+            errors["N_LIST"] = "must contain at least one microtubule position"
+        elif any(float(x) != int(x) for x in nlist):
+            errors["N_LIST"] = "positions must be whole numbers"
+        elif len(set(int(x) for x in nlist)) != len(nlist):
+            errors["N_LIST"] = "positions must be distinct"
+        elif ry is not None and (min(nlist) < 0 or max(nlist) > ry - 1):
+            errors["N_LIST"] = f"positions must lie in [0, {ry - 1}] for ry_param={ry}"
+
+    if computation_name in _FIT_WINDOW_COMPUTATIONS:
+        t = clean.get("T_param")
+        if t is not None and t <= _FIT_WINDOW_MIN_T:
+            errors["T_param"] = (
+                f"must exceed {_FIT_WINDOW_MIN_T} for this computation: the "
+                f"log-fit window is fixed at 0.4-0.5")
+
+    if clean.get("center_init_cond") is False:
+        for key, limit, dim in (("m_init", rg, "rg_param"),
+                                ("n_init", ry, "ry_param")):
+            v = clean.get(key, 0)
+            if limit is not None and not (0 <= v <= limit - 1):
+                errors[key] = f"must lie in [0, {limit - 1}] for {dim}={limit}"
+
+    return errors
+
+
 def run_selected_computation(computation_name, param_dict):
     """
     Dispatches the selected computation function with the parsed parameters.

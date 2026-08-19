@@ -46,9 +46,16 @@ def est_hours(g):
 
 
 def n_list(g, n=N_TUBES):
-    """Evenly spaced microtubule ray indices, matching the sweep convention."""
+    """Evenly spaced microtubule ray indices, matching the sweep convention.
+
+    Mirrors ``numpy.linspace(0, g - g // n, n, dtype=int)``, which computes in
+    floating point and then *truncates*. Rounding instead diverges whenever the
+    spacing is not exact -- for ry=50, n=16 it differs in 6 of 16 positions --
+    and since these indices place the microtubules, a mismatch silently changes
+    the physics rather than raising.
+    """
     step = g - (g // n)
-    return [round(i * step / (n - 1)) for i in range(n)]
+    return [int(i * step / (n - 1)) for i in range(n)]
 
 
 def _get(path):
