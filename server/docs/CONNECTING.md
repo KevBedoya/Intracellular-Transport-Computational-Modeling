@@ -10,12 +10,51 @@ of the access control. There is currently **no API password**: anyone on the
 tailnet can queue jobs, cancel jobs, and download any job's output. Access is
 therefore limited to people the admin invites directly.
 
-- **Server address:** `http://100.83.174.69:8000`
-- **Machine name on the tailnet:** `pop`
+## Where to go once you are on the tailnet
 
-> The `100.x.y.z` address belongs to the tailnet and is meaningless outside it.
-> It changes if the server is moved to a different tailnet — ask the admin if
-> `/health` stops answering.
+| | |
+|---|---|
+| **Web UI** | **http://100.83.174.69:8000/ui** |
+| API root | `http://100.83.174.69:8000` |
+| Machine name on the tailnet | `pop` |
+
+The UI is the normal way to use the server: pick a computation, fill a form,
+queue it, and download the results from the same page. Everything it does is
+also available over the API if you prefer `curl` — see
+[`COMPUTATION_MENU.md`](COMPUTATION_MENU.md).
+
+### Finding the server's address
+
+The `100.x.y.z` address belongs to the tailnet and means nothing outside it. It
+**changes if the server is moved to a different tailnet**, so if the UI stops
+loading, re-check it rather than trusting a bookmark.
+
+**From your own machine** (once you are on the tailnet) — this is the reliable
+way, because it reports what your device can actually reach:
+
+```bash
+tailscale status | grep pop
+```
+
+```
+100.83.174.69   pop   codingendeavors88@   windows   -
+```
+
+The first column is the address. So the UI is that address followed by
+`:8000/ui`.
+
+**On the server itself**, if you are sitting at the workstation:
+
+```powershell
+tailscale ip -4
+```
+
+Either way, confirm before opening a browser:
+
+```bash
+curl -s http://<address>:8000/health
+# {"status": "ok", "queue": {...}}
+```
 
 ---
 
@@ -100,10 +139,33 @@ worker has a database to talk to. Then list what you can run:
 curl -s http://100.83.174.69:8000/computations
 ```
 
-If that returns 18 names, you are fully connected. Continue to
-[`COMPUTATION_MENU.md`](COMPUTATION_MENU.md) to launch something.
+If that returns 18 names, you are fully connected.
 
-For convenience, set this once per shell (or add it to your shell profile):
+## 5. Open the UI
+
+**http://100.83.174.69:8000/ui**
+
+That is all the setup there is. The page loads the list of computations from the
+server, so if the dropdown fills in, everything behind it is working.
+
+A good first run is a 32×32 characteristic-time job — about a minute, and it
+exercises the whole path including the plot preview:
+
+| field | value |
+|---|---|
+| Computation | Characteristic Time (mass vs v) |
+| `rg_param`, `ry_param` | 32, 32 |
+| `v_LIST` | 10000 |
+| `w_param` | 100 |
+| `T_param` | 1 |
+| `N_LIST` | use the helper: enter 4 tubes, click *compute positions* |
+
+Fill in **submitted by** at the top right first — it is saved in your browser, so
+you only do it once, and it is how anyone else sharing the queue can tell whose
+job is whose.
+
+If you would rather drive it from a terminal, set this once per shell (or add it
+to your shell profile) and see [`COMPUTATION_MENU.md`](COMPUTATION_MENU.md):
 
 ```bash
 export ITCM=http://100.83.174.69:8000
@@ -134,8 +196,19 @@ is not a firewall problem, because Tailscale opens no router ports.
 
 **Everything worked yesterday and now nothing answers**
 The server address changes if the tailnet changes. Re-run
-`tailscale status` and use the address listed for `pop` rather than a
-hard-coded one.
+`tailscale status | grep pop` and use the address listed there rather than a
+bookmark.
+
+**The UI loads but the computation dropdown is empty**
+The page reached the server but `GET /computations` failed. Check
+`curl -s <address>:8000/computations` — if that works and the dropdown still does
+not fill, it is a browser-side fault worth reporting.
+
+**`/ui` returns 404 while `/health` works**
+The server is running code from before the UI existed. It needs restarting on the
+workstation — note that restarting picks up whatever is in the working tree, and
+that stopping the scheduled task alone leaves the old process holding the port
+(see the admin notes below).
 
 **A job stays `queued` forever**
 The API accepted it but no worker is consuming the queue. That is a
@@ -162,6 +235,26 @@ processes. This matters: Windows kills the children of an SSH session when the
 session ends, so there is no `nohup` equivalent — a plain background process
 would die the moment you disconnect. Scheduled tasks run in their own session
 and survive both disconnect and logout.
+
+**Restarting is fiddlier than it looks.** The task action runs python under
+`cmd.exe` to redirect output, so stopping the task kills `cmd` and *orphans* the
+python child, which keeps holding port 8000. The next start then exits
+immediately and the task reads `Ready`, looking as though it simply did not run
+while the old code carries on serving. `-Stop` handles this by locating processes
+via the listening port and recorded pid files, and it reports anything it could
+not terminate — a task registered with `-LogonType S4U` runs under a token an
+unelevated shell cannot kill, so finish those from an elevated prompt:
+
+```powershell
+Stop-Process -Id <pid> -Force
+Start-ScheduledTask -TaskName ITCM-api
+```
+
+`-Status` shows how each process was found, and lists running solver children
+with their virtual size and CPU time. Do not judge a long solve by its working
+set: a healthy 112×112 job showed 21 MB resident while holding 5.4 GB committed,
+because its timeseries arrays are touched rarely enough to be trimmed out of the
+working set. CPU time is the honest signal.
 
 One-time machine setup (Tailscale, OpenSSH, firewall, sleep settings) is
 `server/setup_remote.ps1`, which must run from an elevated prompt.

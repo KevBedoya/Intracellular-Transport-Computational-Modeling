@@ -1,15 +1,36 @@
-# Bedoya-Kogan Biophysics — Installation Guide
+# Bedoya-Kogan Biophysics
 
-A desktop application for **intracellular-transport / MFPT computational
-modeling**. It provides a graphical interface for running the project's
-numerical routines (mean first-passage time, density and mass analyses,
-heatmaps, etc.) without touching the command line.
+Computational modeling of **intracellular transport / MFPT**: a numerical PDE
+solver for a two-layer (diffusive + advective) polar domain, with mean
+first-passage time, density, mass and characteristic-time analyses.
 
-This guide is for **installing and running the prebuilt application**. If you
-want to build it yourself, jump to [Build from source](#build-from-source).
+There are **two ways to run it**, and which one you want depends on how big the
+computation is:
 
-For how the repository itself is organised, see
-[`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md).
+| | Use it when | Start here |
+|---|---|---|
+| **Desktop app** | You want a local GUI on your own machine, for small to moderate runs. | This document |
+| **Compute server** | You want to queue long runs on the lab workstation from your own laptop, and collect results later. | [`server/docs/CONNECTING.md`](server/docs/CONNECTING.md) |
+
+The compute server is the better fit for anything large: it runs up to four jobs
+concurrently on the workstation, survives you closing your laptop, and is driven
+from a browser. Cost scales as the sixth power of grid size, so a 96×96 run takes
+about 3.3 hours and a 112×112 run about 9 — not something to hold a laptop open
+for.
+
+Most of this document is about **installing and running the prebuilt desktop
+application**. To build it yourself, jump to
+[Build from source](#build-from-source).
+
+## Other documentation
+
+| | |
+|---|---|
+| [`server/docs/CONNECTING.md`](server/docs/CONNECTING.md) | Getting on the tailnet and reaching the compute server and its web UI |
+| [`server/docs/COMPUTATION_MENU.md`](server/docs/COMPUTATION_MENU.md) | All 18 computations: parameters, outputs, and what each costs |
+| [`server/docs/UI_PLAN.md`](server/docs/UI_PLAN.md) | Design of the browser front end |
+| [`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md) | How the repository is organised |
+| [`docs/COMPUTATIONAL_WORKFLOW.md`](docs/COMPUTATIONAL_WORKFLOW.md) | The numerical workflow |
 
 ---
 
@@ -21,6 +42,7 @@ For how the repository itself is organised, see
 - [Install on Windows](#install-on-windows)
 - [Verify it works](#verify-it-works)
 - [Where your results are saved](#where-your-results-are-saved)
+- [Running on the compute server instead](#running-on-the-compute-server-instead)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
 - [Build from source](#build-from-source)
@@ -135,8 +157,11 @@ computation engine — is working correctly.
 
 ## Where your results are saved
 
-Computation outputs (CSV data, PNG plots, JSON results) are written to a
-**`data_output/`** folder located next to the application binary:
+Computation outputs (CSV data, PNG plots, JSON results) go to a
+**`data_output/`** folder. Where that folder lives depends on how you are
+running:
+
+**Prebuilt application** — next to the application binary:
 
 - **macOS:** inside the app bundle, at
   `Bedoya-Kogan.app/Contents/MacOS/data_output/`.
@@ -145,7 +170,37 @@ Computation outputs (CSV data, PNG plots, JSON results) are written to a
 - **Windows:** inside the `Project2025App` folder, at
   `Project2025App\data_output\`.
 
-The folder is created automatically the first time you run a computation.
+**From a source checkout** — at the **repository root**, `<repo>/data_output/`,
+deliberately outside `src/` so generated data never mixes with code. Set
+`ITCM_OUTPUT_ROOT` to redirect it; the job worker uses that to give each job its
+own directory.
+
+Either way the folder is created on the first run. `data_output/` is scratch and
+is not committed — results worth keeping get promoted into `results/` under a
+descriptive name.
+
+---
+
+## Running on the compute server instead
+
+If a run is going to take hours, queue it on the workstation rather than your own
+machine. The server exposes the same computations over HTTP with a browser front
+end, runs four jobs at once, and keeps going while your laptop is closed.
+
+Full instructions are in [`server/docs/CONNECTING.md`](server/docs/CONNECTING.md);
+the short version:
+
+1. Join the tailnet (invite from the admin, then install Tailscale and sign in).
+2. Find the server's address — on the workstation:
+   ```powershell
+   tailscale ip -4
+   ```
+3. Open `http://<that-address>:8000/ui` in a browser.
+
+Pick a computation, fill the form, queue it, and collect the CSVs and plots from
+the same page when it finishes. Available computations and their costs are
+catalogued in
+[`server/docs/COMPUTATION_MENU.md`](server/docs/COMPUTATION_MENU.md).
 
 ---
 
@@ -213,20 +268,21 @@ The repository includes everything needed:
 |------|---------|
 | `requirements.txt` | Runtime + build dependencies |
 | `packaging/Project2025App.spec` | PyInstaller build definition (cross-platform) |
-| `build_macos.sh` | One-command macOS build → `dist/Bedoya-Kogan.app` + `.dmg` |
-| `build_windows.bat` | One-command Windows build → `dist\Project2025App\` |
+| `packaging/build_macos.sh` | One-command macOS build → `dist/Bedoya-Kogan.app` + `.dmg` |
+| `packaging/build_windows.bat` | One-command Windows build → `dist\Project2025App\` |
+| `packaging/setup_py2app.py` | py2app configuration (alternative macOS route) |
 
 **macOS:**
 ```bash
-./build_macos.sh
+./packaging/build_macos.sh
 ```
 
 **Windows** (from a Command Prompt in the project folder):
 ```bat
-build_windows.bat
+packaging\build_windows.bat
 ```
 
-**Manual build (either platform):**
+**Manual build (either platform), from the repository root:**
 ```bash
 python -m venv .venv
 # macOS/Linux:  source .venv/bin/activate
@@ -234,6 +290,11 @@ python -m venv .venv
 pip install -r requirements.txt
 pyinstaller packaging/Project2025App.spec --noconfirm --clean
 ```
+
+> Run the build from the **repository root**, not from `packaging/`. The spec
+> resolves the repository root as its own parent directory and the package as
+> `src/intracellular_transport`, so it does not care where you invoke it from —
+> but `requirements.txt` and the virtualenv above assume the root.
 
 The macOS build produces an **arm64** app by default (matching the build
 machine). To target Intel Macs, build on an Intel Mac, or produce a `universal2`

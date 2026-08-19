@@ -5,7 +5,7 @@
 #   macOS    -> dist/Bedoya-Kogan.app   (a one-dir app bundle)
 #   Windows  -> dist/Project2025App/    (a one-dir folder containing the .exe)
 #
-# Build with:   pyinstaller Project2025App.spec --noconfirm
+# Build with:   pyinstaller packaging/Project2025App.spec --noconfirm
 # (see build_macos.sh / build_windows.bat and README.md)
 
 import os
@@ -14,8 +14,13 @@ import sys
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 # SPECPATH is the directory containing this .spec file (set by PyInstaller).
-ROOT = os.path.abspath(SPECPATH)
-PKG = os.path.join(ROOT, "intracellular_transport")
+# This spec lives in packaging/, so the repository root is one level up -- it is
+# NOT SPECPATH. The package itself sits under src/ (a src layout), so neither
+# path can be assumed to be the spec's own directory.
+SPEC_DIR = os.path.abspath(SPECPATH)
+ROOT = os.path.dirname(SPEC_DIR)
+SRC = os.path.join(ROOT, "src")
+PKG = os.path.join(SRC, "intracellular_transport")
 
 # --------------------------------------------------------------------------- #
 # Import resolution
@@ -25,7 +30,7 @@ PKG = os.path.join(ROOT, "intracellular_transport")
 # others import the sub-packages bare, e.g. `from computational_tools import ...`
 # (needs PKG on the search path). Both directories must be searchable so the
 # module graph resolves fully.
-pathex = [ROOT, PKG]
+pathex = [PKG, SRC, ROOT]
 
 # Bare-imported sub-packages. collect_submodules pulls in modules that are only
 # reached through dynamic / conditional imports the static analysis can miss.
@@ -52,7 +57,7 @@ hiddenimports += ["matplotlib.backends.backend_qt5agg"]
 # Bundled data assets (resolved at runtime by theme.py against _MEIPASS)
 # --------------------------------------------------------------------------- #
 datas = [
-    ("intracellular_transport/gui_components/styles/style.qss",
+    (os.path.join(PKG, "gui_components", "styles", "style.qss"),
      "intracellular_transport/gui_components/styles"),
 ]
 # All loading-spinner GIF variants.
@@ -65,15 +70,15 @@ datas += collect_data_files(
 # Per-platform icon
 # --------------------------------------------------------------------------- #
 if sys.platform == "darwin":
-    icon_file = os.path.join(ROOT, "TransparentApp.icns")
+    icon_file = os.path.join(SPEC_DIR, "App.icns")
 elif sys.platform.startswith("win"):
-    icon_file = os.path.join(ROOT, "TransparentApp.ico")
+    icon_file = os.path.join(SPEC_DIR, "TransparentApp.ico")
 else:
     icon_file = None
 
 
 a = Analysis(
-    ["main.py"],
+    [os.path.join(ROOT, "main.py")],
     pathex=pathex,
     binaries=[],
     datas=datas,
