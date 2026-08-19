@@ -53,6 +53,14 @@ import jobstore  # noqa: E402
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
+# Re-read templates when they change on disk. Off by default outside debug mode,
+# which means an edit to ui.html needs a full restart to appear -- and restarting
+# is awkward here, because the scheduled task's python child has to be killed
+# separately (see serve.ps1 -Stop). ui.js is already live, being a static file.
+# The cost is a stat() per render, which is nothing at this traffic.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
+
 # Set by main(); None means jobstore's default location.
 DB_PATH = None
 

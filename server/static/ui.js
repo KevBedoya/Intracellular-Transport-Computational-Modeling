@@ -139,7 +139,22 @@ function inputFor(field, value) {
     const h = document.createElement('div');
     h.className = 'hint';
     // hints are written "name: description (type)"; the label already shows name
-    h.textContent = field.hint.replace(new RegExp('^' + field.name + ':\\s*'), '');
+    let text = field.hint.replace(new RegExp('^' + field.name + ':\\s*'), '');
+    if (field.type === 'list') {
+      // The shared hints say "Provide as list of ints: []", which is true of the
+      // desktop GUI (it parses with ast.literal_eval and needs the brackets).
+      // Here brackets are optional, so do not tell people otherwise. No example
+      // is spliced in -- these hints continue into further prose, and an
+      // injected "e.g. 0, 4, 8" landed mid-sentence. The input's placeholder
+      // carries the example instead.
+      text = text
+        .replace(/\s*Provide as (?:a )?list of \w+s?:?\s*\[\s*\]/i, ' Comma separated')
+        .replace(/\s+([,.])/g, '$1')      // tidy " ," left by the removal
+        .replace(/^\s*[,.]\s*/, '')       // ...or a separator now leading
+        .trim();
+      if (text && !/[.!?]$/.test(text)) text += '.';
+    }
+    h.textContent = text;
     wrap.appendChild(h);
   }
   const e = document.createElement('div');
@@ -237,12 +252,18 @@ function collect() {
       }
       params[name] = n;
     } else if (type === 'list') {
-      const parts = raw.replace(/[[\]]/g, '').split(',')
-                       .map((s) => s.trim()).filter((s) => s !== '');
-      if (!parts.length) { errors[name] = 'empty list'; continue; }
+      // Accept what people actually type. Brackets are optional, separators may
+      // be commas or whitespace, and trailing separators are ignored -- so
+      // "0, 4, 8", "0 4 8" and "[0,4,8]" are all the same list.
+      const parts = raw.replace(/[[\]()]/g, ' ')
+                       .split(/[,;\s]+/)
+                       .map((s) => s.trim())
+                       .filter((s) => s !== '');
+      if (!parts.length) { errors[name] = 'enter at least one value'; continue; }
       const nums = parts.map(Number);
-      if (nums.some((n) => !isFinite(n))) {
-        errors[name] = 'list must contain only numbers'; continue;
+      const badIdx = nums.findIndex((n) => !isFinite(n));
+      if (badIdx !== -1) {
+        errors[name] = `"${parts[badIdx]}" is not a number`; continue;
       }
       params[name] = nums;
     } else {
@@ -304,7 +325,6 @@ async function submitJob() {
       body: JSON.stringify({
         computation: $('comp').value,
         params,
-        submitted_by: $('who').value.trim() || null,
       }),
     });
     showFieldErrors({});
@@ -320,48 +340,79 @@ async function submitJob() {
 }
 
 // ------------------------------------------------------------------- queue
-function renderJobs(jobs) {
-  const tb = $('jobs');
+/* Re-rendering on every poll is what made the page jump: replacing innerHTML
+ * destroys and rebuilds the rows, and in the detail panel it also reloads the
+ * <img> tags, so the document height collapses and regrows and the browser's
+ * scroll offset lands somewhere else. Nothing is written unless the rendered
+ * content has actually changed. Row handlers are delegated to the tbody so they
+ * survive a replacement without being reattached. */
+let lastJobsHtml = null;
+
+function jobsHtml(jobs) {
   if (!jobs.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="empty">No jobs yet.</td></tr>';
-    return;
+    return '<tr><td colspan="6" class="empty">No jobs yet.</td></tr>';
   }
-  tb.innerHTML = '';
-  for (const j of jobs) {
-    const tr = document.createElement('tr');
-    if (j.id === SELECTED) tr.className = 'sel';
+  return jobs.map((j) => {
     const p = j.params || {};
     const grid = (p.rg_param && p.ry_param) ? `${p.rg_param}x${p.ry_param}`
                : (p.grid_list ? 'sweep' : '—');
-    tr.innerHTML =
+    const cancel = j.status === 'queued'
+      ? `<button class="mini" data-cancel="${j.id}">cancel</button>` : '';
+    return `<tr data-job="${j.id}"${j.id === SELECTED ? ' class="sel"' : ''}>` +
       `<td class="mono">${j.id.slice(0, 8)}</td>` +
       `<td>${j.computation}</td>` +
       `<td class="mono">${grid}</td>` +
       `<td class="st st-${j.status}">${j.status}</td>` +
       `<td class="mono">${fmtDuration(wallHours(j))}</td>` +
-      `<td></td>`;
-    if (j.status === 'queued') {
-      const b = document.createElement('button');
-      b.className = 'mini';
-      b.textContent = 'cancel';
-      b.addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        try { await api('/jobs/' + j.id, { method: 'DELETE' }); refresh(); }
-        catch (e) { banner(e.message, 'bad'); }
-      });
-      tr.lastElementChild.appendChild(b);
+      `<td>${cancel}</td></tr>`;
+  }).join('');
+}
+
+function renderJobs(jobs) {
+  const html = jobsHtml(jobs);
+  if (html === lastJobsHtml) return;      // unchanged: leave the DOM alone
+  lastJobsHtml = html;
+  $('jobs').innerHTML = html;
+}
+
+function wireQueueDelegation() {
+  $('jobs').addEventListener('click', async (ev) => {
+    const cancelId = ev.target.getAttribute && ev.target.getAttribute('data-cancel');
+    if (cancelId) {
+      ev.stopPropagation();
+      try { await api('/jobs/' + cancelId, { method: 'DELETE' }); refresh(); }
+      catch (e) { banner(e.message, 'bad'); }
+      return;
     }
-    tr.addEventListener('click', () => { SELECTED = j.id; refresh(); });
-    tb.appendChild(tr);
-  }
+    const row = ev.target.closest('tr[data-job]');
+    if (!row) return;
+    SELECTED = row.getAttribute('data-job');
+    lastJobsHtml = null;                  // force the selection highlight to redraw
+    refresh();
+  });
 }
 
 // ------------------------------------------------------------------ detail
+const TERMINAL = ['succeeded', 'failed', 'cancelled'];
+let detailShown = { id: null, sig: null, terminal: false };
+
 async function renderDetail(id) {
   const box = $('detail');
+
+  // A finished job never changes, so once it is on screen there is nothing to
+  // re-fetch or redraw. This is the case that matters: reading results is
+  // exactly when the page was pulling the ground out from under the scroll.
+  if (detailShown.id === id && detailShown.terminal) return;
+
   let job;
   try { job = await api('/jobs/' + id); }
   catch (e) { box.innerHTML = `<div class="empty">${e.message}</div>`; return; }
+
+  // For a job still in flight, redraw only when something visible moved.
+  const sig = JSON.stringify([job.status, job.started_at, job.finished_at,
+                              job.error, job.result]);
+  if (detailShown.id === id && detailShown.sig === sig) return;
+  detailShown = { id, sig, terminal: TERMINAL.indexOf(job.status) !== -1 };
 
   const parts = [];
   parts.push('<div class="kv">');
@@ -478,14 +529,11 @@ async function onComputationChange() {
 (async function init() {
   $('authNote').textContent =
     'No authentication: anyone who can reach this page can queue and cancel '
-    + 'work. "submitted by" is unverified, for your own bookkeeping.';
-
-  $('who').value = localStorage.getItem('itcm_who') || '';
-  $('who').addEventListener('change',
-    () => localStorage.setItem('itcm_who', $('who').value.trim()));
+    + 'work, and read any job’s output.';
 
   $('comp').addEventListener('change', onComputationChange);
   $('submit').addEventListener('click', submitJob);
+  wireQueueDelegation();
 
   try {
     const r = await api('/computations');
