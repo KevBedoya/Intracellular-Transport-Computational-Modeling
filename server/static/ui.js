@@ -350,7 +350,7 @@ let lastJobsHtml = null;
 
 function jobsHtml(jobs) {
   if (!jobs.length) {
-    return '<tr><td colspan="6" class="empty">No jobs yet.</td></tr>';
+    return '<tr><td colspan="7" class="empty">No jobs yet.</td></tr>';
   }
   return jobs.map((j) => {
     const p = j.params || {};
@@ -358,14 +358,58 @@ function jobsHtml(jobs) {
                : (p.grid_list ? 'sweep' : '—');
     const cancel = j.status === 'queued'
       ? `<button class="mini" data-cancel="${j.id}">cancel</button>` : '';
+
+    // Live cells carry their inputs as data attributes and no volatile text.
+    // Keeping the ticking numbers OUT of this string is what lets the poll loop
+    // compare it and skip the rewrite -- put the seconds in here and the table
+    // would differ every tick, rebuilding the DOM and resetting scroll again.
+    let elapsed, remaining;
+    if (j.status === 'running' && j.started_at) {
+      const est = estimateHours(p.rg_param, p.ry_param, p.T_param);
+      elapsed = `<td class="mono live" data-since="${j.started_at}"></td>`;
+      remaining = est == null
+        ? '<td class="mono">—</td>'
+        : `<td class="mono live" data-since="${j.started_at}"`
+          + ` data-est="${est}" title="Estimated from the same grid-size cost`
+          + ` model shown before launch (work grows as the sixth power of grid`
+          + ` size); not a measurement of progress."></td>`;
+    } else {
+      // Finished, queued or cancelled: nothing ticks, so render it inline.
+      elapsed = `<td class="mono">${fmtDuration(wallHours(j))}</td>`;
+      remaining = '<td class="mono">—</td>';
+    }
+
     return `<tr data-job="${j.id}"${j.id === SELECTED ? ' class="sel"' : ''}>` +
       `<td class="mono">${j.id.slice(0, 8)}</td>` +
       `<td>${j.computation}</td>` +
       `<td class="mono">${grid}</td>` +
       `<td class="st st-${j.status}">${j.status}</td>` +
-      `<td class="mono">${fmtDuration(wallHours(j))}</td>` +
+      elapsed + remaining +
       `<td>${cancel}</td></tr>`;
   }).join('');
+}
+
+/* Fill in the ticking cells. Runs once a second and only ever assigns
+ * textContent, so it cannot change the table's structure or disturb scroll. */
+function tickLive() {
+  const now = Date.now();
+  for (const cell of document.querySelectorAll('#jobs .live')) {
+    const started = Date.parse(cell.getAttribute('data-since'));
+    if (isNaN(started)) { cell.textContent = '—'; continue; }
+    const elapsedHr = (now - started) / 3600000;
+    const est = cell.getAttribute('data-est');
+    if (est === null) {
+      cell.textContent = fmtDuration(elapsedHr);
+      continue;
+    }
+    const left = Number(est) - elapsedHr;
+    // Past the estimate there is nothing honest to report but "overdue": the
+    // model has no visibility into actual progress, and the grid study ran
+    // 7-13% over consistently.
+    cell.textContent = left > 0 ? '~' + fmtDuration(left)
+                                : 'over by ' + fmtDuration(-left);
+    cell.classList.toggle('overdue', left <= 0);
+  }
 }
 
 function renderJobs(jobs) {
@@ -373,6 +417,7 @@ function renderJobs(jobs) {
   if (html === lastJobsHtml) return;      // unchanged: leave the DOM alone
   lastJobsHtml = html;
   $('jobs').innerHTML = html;
+  tickLive();                             // fill the new cells immediately
 }
 
 function wireQueueDelegation() {
@@ -543,4 +588,5 @@ async function onComputationChange() {
   }
   refresh();
   setInterval(refresh, POLL_MS);
+  setInterval(tickLive, 1000);   // text-only, independent of the poll
 })();

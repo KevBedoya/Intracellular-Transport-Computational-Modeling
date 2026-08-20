@@ -112,6 +112,10 @@
   .banner.ok  { display: block; background: color-mix(in oklab, var(--good) 14%, transparent); }
   .banner.bad { display: block; background: color-mix(in oklab, var(--bad) 14%, transparent); }
   code, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  /* tabular figures so a ticking value does not change the column width every
+     second, which would reflow the table under the reader */
+  td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.overdue { color: var(--warn); }
   .files { list-style: none; padding: 0; margin: 0; }
   .files li {
     display: flex; gap: 8px; align-items: center; padding: 4px 0;
@@ -165,9 +169,9 @@
       <table>
         <thead><tr>
           <th>Job</th><th>Computation</th><th>Grid</th>
-          <th>Status</th><th>Wall</th><th></th>
+          <th>Status</th><th>Elapsed</th><th>Remaining</th><th></th>
         </tr></thead>
-        <tbody id="jobs"><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
+        <tbody id="jobs"><tr><td colspan="7" class="empty">loading…</td></tr></tbody>
       </table>
     </section>
 
