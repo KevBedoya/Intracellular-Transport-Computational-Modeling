@@ -4,6 +4,65 @@ Measured on the project workstation (RTX 3060, 12 GB, cc 8.6, 28 SMs) against
 the current CPU solver, August 2026. Every figure below was taken on that
 machine; none is extrapolated from vendor claims.
 
+> **Superseded in two places by the implementation.** The port now exists
+> (`src/intracellular_transport/gpu/`), and measuring it corrected the estimates
+> below. Read [Measured after implementation](#measured-after-implementation)
+> first — the projections in the next section were taken with the reductions
+> left out of the kernel, and are therefore optimistic.
+
+## Measured after implementation
+
+Two corrections, both from measuring the real kernel rather than a stencil-only
+proxy.
+
+**The speedup is 9× at 96², not 21×, and it grows with grid size.** The earlier
+figures timed the stencil alone. Adding the mass and centre reductions costs a
+roughly constant 12-16 µs per step — two extra grid-wide barriers and a serial
+combine of the per-block partials — which dominates at small grids and amortises
+at large ones:
+
+| grid | GPU µs/step (with reductions) | ns/patch | CPU µs/step | speedup | GPU wall (T=1) |
+|---|---|---|---|---|---|
+| 48² | 27.2 | 11.8 | 64 | 2.4× | 1.2 min |
+| 96² | 28.0 | 3.03 | 256 | 9.2× | 20 min |
+| 128² | 34.1 | 2.08 | 455 | 13.4× | 1.3 hr |
+| 160² | 43.5 | 1.70 | 712 | 16.4× | 4.0 hr |
+
+CPU figures use the uncontended 27.8 ns/patch anchor. GPU figures exclude
+one-off JIT compilation. The practical conclusion is unchanged and if anything
+sharper: the GPU is not worth using below about 96², and is transformative above
+128², where it turns days into hours.
+
+The serial combine on a single thread is the obvious next optimisation — it is a
+fixed cost per step, so removing it would lift the small-grid figures most.
+
+**Numerical agreement is far better than predicted, and does not compound.**
+This document estimated ~1e-10 relative agreement. Measured worst case across
+32², 48² and 64² is **5.9e-14**, and critically the error does *not* grow with
+step count:
+
+| steps (K) | φ relative error |
+|---|---|
+| 10,624 | 1.8e-15 |
+| 26,560 | 1.6e-15 |
+| 53,121 | 7.4e-15 |
+| 106,242 | 5.1e-15 |
+| 212,485 | 3.7e-15 |
+
+Over a 20× range in step count the disagreement stays at 1e-15 to 1e-14 and does
+not trend upward. The scheme is diffusive and therefore contracting, so
+round-off differences are damped rather than accumulated. That is what makes
+extrapolation to a 332M-step run credible — though it remains an extrapolation:
+the longest run compared directly is 212k steps.
+
+Repeated GPU runs are **bit-identical to each other**, because the block count
+and reduction order are fixed. So a GPU result is exactly reproducible on the
+same machine even though it is not exactly equal to the CPU's.
+
+`tests/test_gpu_agreement.py` holds the tolerance as a single constant and prints
+the measured disagreement, so the acceptance decision can be made against
+numbers rather than estimates.
+
 ## Summary
 
 A GPU port is worth roughly **20-25×** across the grid sizes of interest — but
