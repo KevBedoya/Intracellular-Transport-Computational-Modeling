@@ -59,17 +59,32 @@ def _job_output_root(job_id):
     return os.path.join(default_root, job_id)
 
 
+def _has_checkpoint(ckpt_dir):
+    """True if any solve under this directory left resumable state behind."""
+    if not os.path.isdir(ckpt_dir):
+        return False
+    for entry in os.listdir(ckpt_dir):
+        if os.path.exists(os.path.join(ckpt_dir, entry, "resume_state.npz")):
+            return True
+    return False
+
+
 def _produced_dirs(root):
     """Directories holding this job's actual results.
 
-    Skips two kinds of noise so the recorded list is the scientific output and
+    Skips three kinds of noise so the recorded list is the scientific output and
     nothing else:
       * ``json_output`` -- the control-plane result file, not a result.
+      * ``checkpoints`` -- resume state and the raw memmap-backed samples are
+        machinery, and the samples are large; advertising them as output would
+        both mislead and swamp the listing.
       * directories whose only entries are dotfiles; the output helper seeds
         each parent with a .gitkeep, which would otherwise look like content.
     """
     out = []
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        if "checkpoints" in dirnames:
+            dirnames.remove("checkpoints")          # prune, do not descend
         if os.path.basename(dirpath) == "json_output":
             continue
         if any(not f.startswith(".") for f in filenames):
@@ -106,12 +121,22 @@ def _launch(job):
     out_root = _job_output_root(job["id"])
     os.makedirs(out_root, exist_ok=True)
 
+    # Checkpoints live under the job's own output root, which is keyed on the
+    # job id and therefore stable across attempts. So a job requeued after an
+    # interruption finds its own checkpoint and continues from it rather than
+    # starting over -- which for a multi-day solve is the whole point.
+    ckpt_dir = os.path.join(out_root, "checkpoints")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    resuming = _has_checkpoint(ckpt_dir)
+
     # Agg keeps a headless child from trying to open a GUI backend; the child
     # inherits it unless the operator has chosen otherwise.
-    extra_env = {"ITCM_OUTPUT_ROOT": out_root}
+    extra_env = {"ITCM_OUTPUT_ROOT": out_root,
+                 "ITCM_CHECKPOINT_DIR": ckpt_dir}
     extra_env.setdefault("MPLBACKEND", os.environ.get("MPLBACKEND", "Agg"))
 
-    _log(f"start   {job['id'][:8]} {job['computation']}")
+    note = "  (resuming from checkpoint)" if resuming else ""
+    _log(f"start   {job['id'][:8]} {job['computation']}{note}")
     proc = subprocess_launcher.launch_subprocess(args, extra_env=extra_env)
     return proc, out_root
 

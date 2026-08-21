@@ -952,6 +952,35 @@ def _create_unique_timestamp_dir(parent_directory, timestamp_format="%Y-%m-%d_%H
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
+def _setup_checkpoint(tag, n_samples, **fp_params):
+    """Prepare checkpointing for one solve, if it is enabled for this run.
+
+    ``n_samples`` is the timeseries length; it is named distinctly from the
+    fingerprint's own ``relative_k`` so the two cannot collide in **fp_params.
+
+    Enabled by the ITCM_CHECKPOINT_DIR environment variable, which the job
+    worker sets per job. Left unset -- direct scripts, the desktop GUI -- this
+    returns no checkpoint and ordinary in-RAM timeseries, so nothing about the
+    existing paths changes.
+
+    Returns ``(checkpoint_or_None, five_timeseries)``.
+    """
+    import os
+    from computational_tools import checkpointing as chk
+
+    root = os.environ.get("ITCM_CHECKPOINT_DIR")
+    if not root:
+        return None, chk.allocate_timeseries(n_samples, 5)
+
+    directory = os.path.join(root, tag)
+    digest, params = chk.fingerprint(**fp_params)
+    # Resume only if this exact configuration was already under way here.
+    resume = os.path.exists(os.path.join(directory, chk.STATE_FILE))
+    series = chk.allocate_timeseries(n_samples, 5, directory=directory,
+                                     resume=resume)
+    return chk.Checkpoint(directory, digest, params), series
+
+
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
                            mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True):
 
@@ -992,11 +1021,18 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     for v_param in v_LIST:
 
         D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
-        MA_DL_timeseries = np.zeros([relative_k], dtype=np.float64)
-        MA_AL_timeseries = np.zeros([relative_k], dtype=np.float64)
-        MA_ALoT_timeseries = np.zeros([relative_k], dtype=np.float64)
-        MA_ALoI_timeseries = np.zeros([relative_k], dtype=np.float64)
-        MA_TM_timeseries = np.zeros([relative_k], dtype=np.float64)
+
+        # One checkpoint directory per velocity, since each v is a separate
+        # solve; without the suffix a sweep would resume the wrong trajectory.
+        cp, series = _setup_checkpoint(
+            f"char_time_v{v_param:g}", relative_k,
+            rg_param=rg_param, ry_param=ry_param, a=a_param, b=b_param,
+            v=v_param, T=T_param, N_LIST=N_LIST, d_tube=d_tube,
+            domain_radius=domain_radius, D=D,
+            MA_collection_factor=MA_collection_factor, relative_k=relative_k,
+            center_init_cond=center_init_cond, m_init=m_init, n_init=n_init)
+        (MA_DL_timeseries, MA_AL_timeseries, MA_ALoT_timeseries,
+         MA_ALoI_timeseries, MA_TM_timeseries) = series
 
         _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
 
@@ -1004,7 +1040,8 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
                                                A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
                                                MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
                                                relative_k, d_tube, domain_radius, D, mass_checkpoint,
-                                               center_init_cond, m_init, n_init)
+                                               center_init_cond, m_init, n_init,
+                                               checkpoint=cp)
 
         y1 = np.log10(MA_TM_timeseries[t1])
         y2 = np.log10(MA_TM_timeseries[t2])

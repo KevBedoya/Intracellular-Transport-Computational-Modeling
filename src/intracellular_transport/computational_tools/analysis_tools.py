@@ -2,6 +2,7 @@ import pandas as pd
 
 from . import njit, numerical_tools as num, np
 from computational_tools import struct_init
+from computational_tools import checkpointing as chk
 
 
 # Methods used to collect numerical results (via PDE solver) to conduct analyses on, e.g, mass(t), Phi(theta), Phi(rad), Rho(rad), ect.
@@ -840,15 +841,21 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
                                        MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
                                        relative_k, d_tube=0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
                                        center_init_cond=True, m_init=0, n_init=0,
-                                       chunk_steps=0, on_chunk=None):
+                                       chunk_steps=0, on_chunk=None,
+                                       checkpoint=None):
     """Solve to ``T_param``, collecting layer masses as it goes.
 
     ``chunk_steps`` splits the time loop into pieces of that many steps; 0 (the
     default) runs it in a single chunk, which is the original behaviour.
-    ``on_chunk``, if given, is called as ``on_chunk(k, state)`` after each chunk
-    with the timestep reached and the carried scalars -- the hook a checkpoint
-    writer uses. Neither affects the numerics: chunk boundaries are exactly
-    equivalent to running straight through.
+    ``on_chunk``, if given, is called as ``on_chunk(k, state)`` after each chunk.
+    Neither affects the numerics: chunk boundaries are exactly equivalent to
+    running straight through.
+
+    ``checkpoint`` is a ``checkpointing.Checkpoint``. When supplied the run
+    resumes from any state it holds and saves after each chunk, so an
+    interrupted multi-day solve continues instead of restarting. Passing one
+    without also passing ``chunk_steps`` would checkpoint exactly once at the
+    end, which is useless, so a default chunk size is chosen in that case.
     """
 
     print("Running optimized version.")
@@ -858,24 +865,47 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
     dThe = num.compute_dThe(ry_param)
     dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
-    if center_init_cond:
-        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
-    else:
-        central_patch = 0.0
-        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
+
     v_param *= -1
     # Initialize the ring position (m) dependent extraction range dictionary
     d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
 
-    # Initialize layer masses
-    dl_mass = 1
-    al_mass = 0
+    resumed = checkpoint.try_resume(D_LAYER, A_LAYER) if checkpoint else None
 
-    # Mass data collection iterator
-    MA_k_step = 0
+    if resumed is not None:
+        # The layers came back from disk already carrying the initial condition
+        # and every step since, so initialisation must be skipped entirely --
+        # re-seeding here would overwrite the resumed field.
+        k, central_patch, dl_mass, al_mass, MA_k_step = resumed
+        print("Resuming from timestep", k, "of", K)
+    else:
+        if center_init_cond:
+            central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+        else:
+            central_patch = 0.0
+            D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
 
+        # Initialize layer masses
+        dl_mass = 1
+        al_mass = 0
+
+        # Mass data collection iterator
+        MA_k_step = 0
+        k = 0
+
+    if chunk_steps <= 0 and checkpoint is not None:
+        # A checkpointed run needs boundaries to save at. Sized for roughly 30
+        # seconds of work, using the measured ~28 ns per patch per step, so a
+        # crash costs at most that much progress. The write itself is under a
+        # megabyte -- 0.82 MB even at 160x160 -- so a tighter cadence is
+        # essentially free, and the first boundary arriving late is the only
+        # window in which a crash loses everything.
+        chunk_steps = max(1_000_000_000 // max(rg_param * ry_param, 1), 1)
     step = K if chunk_steps <= 0 else min(chunk_steps, K)
-    k = 0
+
+    series = (MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+              MA_ALoT_timeseries, MA_TM_timeseries)
+
     while k < K:
         k_end = min(k + step, K)
         central_patch, dl_mass, al_mass, MA_k_step = advance_mass_analysis(
@@ -886,8 +916,18 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
             relative_k, d_list, d_tube, dRad, dThe, dT, D, mass_checkpoint,
             central_patch, dl_mass, al_mass, MA_k_step)
         k = k_end
+        state = (central_patch, dl_mass, al_mass, MA_k_step)
+        if checkpoint is not None:
+            checkpoint.save(k, D_LAYER, A_LAYER, state, series=series,
+                            force=(k >= K))
         if on_chunk is not None:
-            on_chunk(k, (central_patch, dl_mass, al_mass, MA_k_step))
+            on_chunk(k, state)
+
+    if checkpoint is not None:
+        # Finished: flush the samples, then drop the resume state so a rerun
+        # does not resume a completed solve.
+        chk.flush_timeseries(series)
+        checkpoint.clear()
 
     return central_patch, dl_mass, al_mass, MA_k_step
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

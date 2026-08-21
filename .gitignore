@@ -151,3 +151,6 @@ src/intracellular_transport/gui_components/saved_state.json
 *.sqlite3-shm
 data_output/jobs/
 server/logs/
+
+# Checkpoint state and memmap-backed samples (see computational_tools/checkpointing.py)
+data_output/**/checkpoints/
