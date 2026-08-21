@@ -768,38 +768,28 @@ def comp_diffusive_snapshots_time_dep(rg_param, ry_param, switch_param_a, switch
 
 # (****) (****)
 @njit
-def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
-                                       N_LIST, D_LAYER, A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
-                                       MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
-                                       relative_k, d_tube=0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
-                                       center_init_cond=True, m_init=0, n_init=0):
+def advance_mass_analysis(k_start, k_end, rg_param, ry_param, switch_param_a, switch_param_b,
+                          v_param, N_LIST, D_LAYER, A_LAYER,
+                          MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+                          MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
+                          relative_k, d_list, d_tube, dRad, dThe, dT, D, mass_checkpoint,
+                          central_patch, dl_mass, al_mass, MA_k_step):
+    """Advance the solution from timestep ``k_start`` to ``k_end``.
 
-    print("Running optimized version.")
+    Split out of comp_mass_analysis_respect_to_time so the time loop can be
+    driven in chunks. Everything the loop carries across one iteration is either
+    mutated in place (D_LAYER, A_LAYER, the timeseries) or passed in and returned
+    (the four scalars), so stopping at any k and resuming from it is exactly
+    equivalent to running straight through -- which is what makes checkpointing
+    possible, and what tests/test_checkpoint_resume.py asserts.
 
-    # Initialize constants
-    dRad = num.compute_dRad(rg_param, domain_radius)
-    dThe = num.compute_dThe(ry_param)
-    dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
-    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
-    if center_init_cond:
-        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
-    else:
-        central_patch = 0.0
-        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
-    v_param *= -1
-    # Initialize the ring position (m) dependent extraction range dictionary
-    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+    ``v_param`` must already be negated by the caller, and ``d_list`` already
+    built: both are set up once per run, not per chunk.
 
-    # Initialize layer masses
-    dl_mass = 1
-    al_mass = 0
-
-    # Mass data collection iterator
-    MA_k_step = 0
-
-    # **** - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    k = 0
-    while k < K:
+    Returns the carried scalars: (central_patch, dl_mass, al_mass, MA_k_step).
+    """
+    k = k_start
+    while k < k_end:
 
         num.comp_DL_AL_kp1_2step(ry_param, rg_param, d_list, D_LAYER, central_patch, A_LAYER, N_LIST, dRad, dThe, dT, switch_param_a, switch_param_b, v_param, d_tube)
 
@@ -836,7 +826,71 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
         A_LAYER[0] = A_LAYER[1]
         k += 1
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    return central_patch, dl_mass, al_mass, MA_k_step
+
+
+# (****) Main mass-analysis driver (****)
+# Deliberately NOT @njit: it drives the njit kernel above in chunks, and a
+# checkpointing hook has to do file I/O between chunks, which nopython mode
+# cannot (np.save fails to compile there). The heavy work is all inside
+# advance_mass_analysis, so leaving the driver in Python costs one function call
+# per chunk -- nothing against a chunk of hundreds of thousands of timesteps.
+def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
+                                       N_LIST, D_LAYER, A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+                                       MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
+                                       relative_k, d_tube=0, domain_radius=1.0, D=1.0, mass_checkpoint=10**6,
+                                       center_init_cond=True, m_init=0, n_init=0,
+                                       chunk_steps=0, on_chunk=None):
+    """Solve to ``T_param``, collecting layer masses as it goes.
+
+    ``chunk_steps`` splits the time loop into pieces of that many steps; 0 (the
+    default) runs it in a single chunk, which is the original behaviour.
+    ``on_chunk``, if given, is called as ``on_chunk(k, state)`` after each chunk
+    with the timestep reached and the carried scalars -- the hook a checkpoint
+    writer uses. Neither affects the numerics: chunk boundaries are exactly
+    equivalent to running straight through.
+    """
+
+    print("Running optimized version.")
+
+    # Initialize constants
+    dRad = num.compute_dRad(rg_param, domain_radius)
+    dThe = num.compute_dThe(ry_param)
+    dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    if center_init_cond:
+        central_patch = num.compute_init_cond_cent(rg_param, domain_radius)
+    else:
+        central_patch = 0.0
+        D_LAYER[0][m_init][n_init] = num.compute_init_cond_patch(rg_param, ry_param, m_init, domain_radius)
+    v_param *= -1
+    # Initialize the ring position (m) dependent extraction range dictionary
+    d_list = struct_init.build_d_tube_map_dense(rg_param, ry_param, N_LIST, d_tube, domain_radius)
+
+    # Initialize layer masses
+    dl_mass = 1
+    al_mass = 0
+
+    # Mass data collection iterator
+    MA_k_step = 0
+
+    step = K if chunk_steps <= 0 else min(chunk_steps, K)
+    k = 0
+    while k < K:
+        k_end = min(k + step, K)
+        central_patch, dl_mass, al_mass, MA_k_step = advance_mass_analysis(
+            k, k_end, rg_param, ry_param, switch_param_a, switch_param_b,
+            v_param, N_LIST, D_LAYER, A_LAYER,
+            MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+            MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
+            relative_k, d_list, d_tube, dRad, dThe, dT, D, mass_checkpoint,
+            central_patch, dl_mass, al_mass, MA_k_step)
+        k = k_end
+        if on_chunk is not None:
+            on_chunk(k, (central_patch, dl_mass, al_mass, MA_k_step))
+
+    return central_patch, dl_mass, al_mass, MA_k_step
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
 # (****) (****)
