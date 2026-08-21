@@ -63,6 +63,44 @@ same machine even though it is not exactly equal to the CPU's.
 the measured disagreement, so the acceptance decision can be made against
 numbers rather than estimates.
 
+### The tolerance was accepted, and the path is wired
+
+`~1e-14` was accepted in August 2026 in exchange for the speedup above. `device`
+is now a parameter on `Mass Analysis` and `Characteristic Time (mass vs v)`,
+defaulting to `cpu`, and reaches the browser form and the job API through the
+existing schema. `gpu` fails loudly on an unsupported configuration; `auto` falls
+back to the CPU and says why. An explicit `gpu` request that silently ran on the
+CPU would misreport what produced the numbers, which is why the two differ.
+
+End-to-end through `collect_char_time_mass` at 32², T=0.8, comparing the two
+quantities that actually get reported:
+
+| quantity | CPU | GPU | relative |
+|---|---|---|---|
+| `t*` | 0.0686170327484596 | 0.0686170327484591 | 7.7e-15 |
+| `m*` | 0.127901436091497 | 0.127901436091496 | 5.2e-15 |
+
+That closes step 4 below.
+
+### A transposition the first test could not see
+
+Worth recording, because the test looked thorough and was not. The original
+agreement test compared the final field and two of the five timeseries — slots 0
+and 4. Slots 2 and 3 were **transposed** between the devices: the CPU stored
+`al/T` where the GPU stored `al/D`.
+
+The cause was that `collect_char_time_mass` unpacked the allocated `series` list
+in a different order than it passed those arrays to the solver, so the slot
+ordering was self-consistent within the CPU path and wrong against the kernel's
+fixed indices. It affected no committed result — only `MA_TM` (slot 4) feeds the
+characteristic-time fit — but it would have corrupted those two series the moment
+a GPU run wrote them.
+
+The test now compares all five series by name. The lesson is that a partial
+comparison over an indexed collection is not evidence about the indices it
+skipped, and that a slot order shared between two implementations is a contract
+that belongs in a comment at both ends.
+
 ## Summary
 
 A GPU port is worth roughly **20-25×** across the grid sizes of interest — but
@@ -232,6 +270,9 @@ Recommended order:
 4. **Validate** against CPU at 48² and 96² within the agreed tolerance, and
    re-derive `t*` for a configuration whose CPU value is already known.
 5. Extend to the grids that were previously out of reach.
+
+Steps 1-4 are done. Step 5 is the remaining work, and it is now a matter of
+submitting jobs rather than writing code.
 
 Step 4 is the one to not rush: a GPU result that is subtly wrong is worse than no
 GPU result, and the reduction-ordering differences mean the usual bit-identity

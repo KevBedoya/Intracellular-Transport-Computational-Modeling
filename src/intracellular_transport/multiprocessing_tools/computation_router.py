@@ -220,6 +220,29 @@ def validate_params(computation_name, params):
                 f"must exceed {_FIT_WINDOW_MIN_T} for this computation: the "
                 f"log-fit window is fixed at 0.4-0.5")
 
+    # Device selection. Checked here so a typo ("gpu1", "cuda:0") is rejected at
+    # submission rather than after the solve has been queued -- and so that
+    # asking for the GPU on a configuration the port refuses (d_tube != 0, an
+    # off-centre seed) is caught before any compute time is spent.
+    device = clean.get("device")
+    if device is not None:
+        from launch_functions.launch import DEVICES
+
+        norm = str(device).strip().lower()
+        if norm not in DEVICES:
+            errors["device"] = f"must be one of {', '.join(DEVICES)}"
+        else:
+            clean["device"] = norm
+            if norm == "gpu":
+                if clean.get("d_tube"):
+                    errors["device"] = (
+                        "gpu does not support d_tube != 0; use cpu, or auto to "
+                        "fall back automatically")
+                elif clean.get("center_init_cond") is False:
+                    errors["device"] = (
+                        "gpu does not support off-centre initial conditions; "
+                        "use cpu, or auto to fall back automatically")
+
     if clean.get("center_init_cond") is False:
         for key, limit, dim in (("m_init", rg, "rg_param"),
                                 ("n_init", ry, "ry_param")):

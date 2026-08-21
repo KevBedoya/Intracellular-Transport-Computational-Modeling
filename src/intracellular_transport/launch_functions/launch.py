@@ -4,6 +4,14 @@ from computational_tools import struct_init
 from data_processing import data_process_functions as pro
 import matplotlib.pyplot as plt
 
+# Accepted values for the `device` parameter, in the form the API and GUI use.
+# Defined here rather than beside _solve_mass_analysis because they are default
+# argument values, which are evaluated when the enclosing `def` executes.
+DEVICE_CPU = "cpu"
+DEVICE_GPU = "gpu"
+DEVICE_AUTO = "auto"
+DEVICES = (DEVICE_CPU, DEVICE_GPU, DEVICE_AUTO)
+
 
 # (****) Validate an off-center initial-condition patch (m, n) (****)
 def _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param):
@@ -866,7 +874,8 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
                           domain_radius=1.0, D=1.0,
                           mass_checkpoint=10 ** 6, d_tube=0.0, MA_collection_factor_limit=10 ** 3, save_png=True,
                           show_plt=False,
-                          center_init_cond=True, m_init=0, n_init=0):
+                          center_init_cond=True, m_init=0, n_init=0,
+                          device=DEVICE_CPU):
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -895,9 +904,14 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
 
     MA_DL_timeseries = np.zeros([relative_k], dtype=np.float64)
     MA_AL_timeseries = np.zeros([relative_k], dtype=np.float64)
-    MA_ALoT_timeseries = np.zeros([relative_k], dtype=np.float64)
     MA_ALoI_timeseries = np.zeros([relative_k], dtype=np.float64)
+    MA_ALoT_timeseries = np.zeros([relative_k], dtype=np.float64)
     MA_TM_timeseries = np.zeros([relative_k], dtype=np.float64)
+
+    # Canonical slot order shared by the CPU driver's parameter list and the
+    # GPU kernel's series[] indices.
+    series = [MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+              MA_ALoT_timeseries, MA_TM_timeseries]
 
     # delta_R = num.compute_dRad(rg_param)
     # delta_theta = num.compute_dThe(ry_param)
@@ -908,11 +922,11 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
 
     _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
 
-    ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST, D_LAYER,
-                                           A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
-                                           MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
-                                           relative_k, d_tube, domain_radius, D, mass_checkpoint,
-                                           center_init_cond, m_init, n_init)
+    _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
+                         v_param, T_param, N_LIST, D_LAYER, A_LAYER,
+                         MA_collection_factor, relative_k, d_tube,
+                         domain_radius, D, mass_checkpoint, center_init_cond,
+                         m_init, n_init)
 
     return pro.process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,
                                   MA_ALoI_timeseries,
@@ -981,8 +995,84 @@ def _setup_checkpoint(tag, n_samples, **fp_params):
     return chk.Checkpoint(directory, digest, params), series
 
 
+def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
+                         v_param, T_param, N_LIST, D_LAYER, A_LAYER,
+                         MA_collection_factor, relative_k, d_tube,
+                         domain_radius, D, mass_checkpoint, center_init_cond,
+                         m_init, n_init, cp=None):
+    """Run the time-stepping solve on the requested device.
+
+    ``series`` is the five timeseries in canonical order (DL, AL, ALoI, ALoT,
+    TM); both devices write those same slots.
+
+    The CPU path is the reference implementation and the authority on
+    correctness (docs/GPU_PLAN.md).  The GPU path agrees with it to ~1e-14
+    relative rather than bit-identically, because its mass and centre
+    reductions are parallel tree reductions where the CPU's are sequential
+    accumulations, and floating-point addition is not associative.  That
+    tolerance is an accepted trade for roughly 9x at 96^2 rising to 16x at
+    160^2; it is asserted by tests/test_gpu_agreement.py.
+
+    ``device`` semantics differ deliberately in how they fail:
+
+      * ``cpu``  -- never touches CUDA.
+      * ``gpu``  -- raises if the GPU cannot run this configuration.  An
+                    explicit request for the GPU that silently ran on the CPU
+                    would misreport what produced the numbers.
+      * ``auto`` -- prefers the GPU, falls back to the CPU with a printed
+                    reason.  Suitable for batch submission where either device
+                    is acceptable.
+    """
+    dev = (device or DEVICE_CPU).strip().lower()
+    if dev not in DEVICES:
+        raise ValueError(
+            f"unknown device {device!r}; expected one of {', '.join(DEVICES)}")
+
+    if dev in (DEVICE_GPU, DEVICE_AUTO):
+        from gpu import driver as gpu_driver
+
+        try:
+            gpu_driver.check_supported(rg_param, ry_param, d_tube,
+                                       center_init_cond)
+        except gpu_driver.GpuUnsupported as exc:
+            if dev == DEVICE_GPU:
+                raise
+            print(f"device=auto: GPU unavailable, using CPU instead ({exc})")
+        else:
+            print(f"device={dev}: solving on GPU "
+                  f"({rg_param}x{ry_param}, agreement ~1e-14 vs CPU)")
+            resume_state = None
+            if cp is not None:
+                resumed = cp.try_resume(D_LAYER, A_LAYER)
+                if resumed is not None:
+                    resume_state = resumed
+                    print(f"    resuming from checkpoint at step "
+                          f"{resume_state[0]:,}")
+
+            def on_chunk(k, state):
+                cp.save(k, D_LAYER, A_LAYER, state, series=series)
+
+            result = gpu_driver.solve(
+                rg_param, ry_param, a_param, b_param, v_param, T_param,
+                N_LIST, D_LAYER, A_LAYER, series, MA_collection_factor,
+                relative_k, d_tube=d_tube, domain_radius=domain_radius, D=D,
+                center_init_cond=center_init_cond,
+                on_chunk=None if cp is None else on_chunk,
+                resume_state=resume_state)
+            if cp is not None:
+                cp.clear()
+            return result
+
+    return ant.comp_mass_analysis_respect_to_time(
+        rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST,
+        D_LAYER, A_LAYER, series[0], series[1], series[2], series[3],
+        series[4], MA_collection_factor, relative_k, d_tube, domain_radius, D,
+        mass_checkpoint, center_init_cond, m_init, n_init, checkpoint=cp)
+
+
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
-                           mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True):
+                           mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True,
+                           device=DEVICE_CPU):
 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     print("deltaT = ", num.compute_dT(rg_param, ry_param))
@@ -1031,17 +1121,22 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
             domain_radius=domain_radius, D=D,
             MA_collection_factor=MA_collection_factor, relative_k=relative_k,
             center_init_cond=center_init_cond, m_init=m_init, n_init=n_init)
-        (MA_DL_timeseries, MA_AL_timeseries, MA_ALoT_timeseries,
-         MA_ALoI_timeseries, MA_TM_timeseries) = series
+        # Canonical slot order, matching the parameter order of
+        # comp_mass_analysis_respect_to_time: (DL, AL, ALoI, ALoT, TM).
+        # The GPU kernel writes these same indices, so the order here is a
+        # contract between the two devices, not a local naming choice --
+        # swapping slots 2 and 3 makes the two paths disagree on which series
+        # holds al/T and which holds al/D.
+        (MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+         MA_ALoT_timeseries, MA_TM_timeseries) = series
 
         _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
 
-        ant.comp_mass_analysis_respect_to_time(rg_param, ry_param, a_param, b_param, v_param, T_param, N_LIST, D_LAYER,
-                                               A_LAYER, MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
-                                               MA_ALoT_timeseries, MA_TM_timeseries, MA_collection_factor,
-                                               relative_k, d_tube, domain_radius, D, mass_checkpoint,
-                                               center_init_cond, m_init, n_init,
-                                               checkpoint=cp)
+        _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
+                             v_param, T_param, N_LIST, D_LAYER, A_LAYER,
+                             MA_collection_factor, relative_k, d_tube,
+                             domain_radius, D, mass_checkpoint,
+                             center_init_cond, m_init, n_init, cp=cp)
 
         y1 = np.log10(MA_TM_timeseries[t1])
         y2 = np.log10(MA_TM_timeseries[t2])

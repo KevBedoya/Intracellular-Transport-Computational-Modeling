@@ -265,7 +265,8 @@ PARAMETER_SCHEMAS = {
             ("d_tube", 0),
             ("MA_collection_factor_limit", int(1e3)),
             ("save_png", True),
-            ("show_plt", False)
+            ("show_plt", False),
+            ("device", "cpu")
         ]
     },
 
@@ -287,7 +288,8 @@ PARAMETER_SCHEMAS = {
             ("center_init_cond", True),
             ("m_init", 0),
             ("n_init", 0),
-            ("show_plt", False)
+            ("show_plt", False),
+            ("device", "cpu")
         ],
         "approach": ["time-dependent"]
     },

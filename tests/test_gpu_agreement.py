@@ -78,22 +78,30 @@ def _rel_err(a, b):
     return float(np.max(np.abs(a - b) / denom))
 
 
+# Slot order of the five timeseries, shared by the CPU driver's parameter list
+# and the GPU kernel's series[] indices. Compared by name below because an
+# earlier version of this test checked only slots 0 and 4 -- and slots 2 and 3
+# were in fact transposed between the two devices, which it could not see.
+SERIES_NAMES = ("dl_mass", "al_mass", "al_over_D", "al_over_total", "total_mass")
+
+
 def _measure(case):
     D_c, A_c, s_c, st_c, K, rel, NL = _cpu(case)
     D_g, A_g, s_g, st_g = _gpu(case, NL, rel)
     # Only compare samples that were actually written.
     n = min(int(st_c[3]), int(st_g[3]))
-    return {
+    out = {
         "K": K,
         "samples": n,
         "phi": _rel_err(D_c[0], D_g[0]),
         "rho": _rel_err(A_c[0], A_g[0]),
-        "total_mass": _rel_err(s_c[4][:n], s_g[4][:n]) if n else 0.0,
-        "dl_mass": _rel_err(s_c[0][:n], s_g[0][:n]) if n else 0.0,
         "central": _rel_err([st_c[0]], [st_g[0]]),
         "cpu_state": st_c,
         "gpu_state": st_g,
     }
+    for j, name in enumerate(SERIES_NAMES):
+        out[name] = _rel_err(s_c[j][:n], s_g[j][:n]) if n else 0.0
+    return out
 
 
 def test_gpu_matches_cpu_within_tolerance():
@@ -104,7 +112,7 @@ def test_gpu_matches_cpu_within_tolerance():
     for case in CASES:
         r = _measure(case)
         label = f"{case['rg']}x{case['ry']} T={case['T']} tubes={case['tubes']}"
-        for field in ("phi", "rho", "total_mass", "dl_mass", "central"):
+        for field in ("phi", "rho", "central") + SERIES_NAMES:
             if r[field] > TOLERANCE:
                 failures.append(f"{label}: {field} relative error "
                                 f"{r[field]:.3e} exceeds {TOLERANCE:.0e}")
@@ -157,17 +165,19 @@ if __name__ == "__main__":
         print("no CUDA device available:", pk.unavailable_reason())
         sys.exit(0)
 
+    fields = ("phi", "rho", "central") + SERIES_NAMES
     print("Measured CPU-vs-GPU disagreement (max relative error)\n")
-    print(f"{'case':>22} {'K':>9} {'samples':>8} {'phi':>11} {'rho':>11} "
-          f"{'total mass':>11} {'central':>11}")
+    header = f"{'case':>18} {'K':>9} {'samp':>6}" + \
+        "".join(f" {f:>13}" for f in fields)
+    print(header)
     worst = 0.0
     for case in CASES:
         r = _measure(case)
         label = f"{case['rg']}x{case['ry']} T={case['T']}"
-        print(f"{label:>22} {r['K']:>9,} {r['samples']:>8,} "
-              f"{r['phi']:>11.3e} {r['rho']:>11.3e} "
-              f"{r['total_mass']:>11.3e} {r['central']:>11.3e}")
-        worst = max(worst, r["phi"], r["rho"], r["total_mass"], r["central"])
+        row = f"{label:>18} {r['K']:>9,} {r['samples']:>6,}" + \
+            "".join(f" {r[f]:>13.3e}" for f in fields)
+        print(row)
+        worst = max(worst, *(r[f] for f in fields))
     print(f"\nworst relative error across all cases: {worst:.3e}")
     print(f"current TOLERANCE in this file:         {TOLERANCE:.0e}")
     print("verdict:", "within tolerance" if worst <= TOLERANCE

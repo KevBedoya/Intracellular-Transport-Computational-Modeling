@@ -39,6 +39,32 @@ computation below. Send real JSON types — `96` and `[0, 4, 8]`, not `"96"` and
 Always pass `"show_plt": false`. It is a desktop-GUI setting that tries to open
 a plot window; on a headless server it does nothing useful.
 
+### Choosing a device (`Mass Analysis`, `Characteristic Time (mass vs v)`)
+
+These two computations accept `"device"`, which selects where the time-stepping
+loop runs. It defaults to `"cpu"`, so existing job definitions are unaffected.
+
+| value | behaviour |
+|---|---|
+| `"cpu"` | Reference implementation. Never touches CUDA. The default. |
+| `"gpu"` | Fails the job if the GPU cannot run this configuration, rather than quietly using the CPU. |
+| `"auto"` | Prefers the GPU, falls back to the CPU and logs why. |
+
+The GPU is worth using at **96×96 and above**, where it is roughly 9× faster,
+rising to ~16× at 160×160. Below 96×96 the per-step reduction overhead dominates
+and the gain is small.
+
+**GPU results are not bit-identical to CPU results.** The mass and centre
+reductions are parallel tree reductions on the GPU and sequential accumulations
+on the CPU, and floating-point addition is not associative. Measured agreement is
+**~1e-14 relative** on `t*` and `m*`, and the error does not grow with step
+count. Repeated GPU runs are bit-identical *to each other*. If you need results
+directly comparable to a previously published CPU number at full precision, use
+`"cpu"`.
+
+The GPU path does not support `d_tube != 0` or off-centre initial conditions.
+Requesting `"gpu"` with either is rejected at submission with a 400.
+
 ### Checking on it
 
 ```bash
@@ -63,7 +89,6 @@ curl -s $ITCM/jobs/<job_id>/outputs
 ```
 
 Download one file, or everything (the `tr -d '\r'` keeps the loop working under
-'` keeps the loop working under
 Git Bash on Windows, whose `python3` emits CRLF; harmless on macOS and Linux):
 
 ```bash
@@ -125,9 +150,15 @@ Cost scales linearly in `T_param`, so `T = 2` doubles these. Four jobs run
 concurrently at near-full speed (measured 3.90× throughput on 4 slots), so a
 four-configuration sweep costs about the same wall time as one job.
 
-**There is no checkpointing.** A power cut or reboot loses the run entirely;
-nothing resumes. Prefer 48×48 while exploring, and reserve 96×96 for runs you
-actually need.
+**Jobs submitted through the server are checkpointed.** State is persisted
+roughly every 30 seconds, so a reboot or a crash resumes from the last boundary
+rather than restarting. Resume only happens for an identical parameter set — a
+changed configuration starts fresh instead of silently continuing the wrong
+trajectory. Runs launched directly from a script or the desktop GUI are *not*
+checkpointed; that path is unchanged.
+
+Prefer 48×48 while exploring, and reserve 96×96 and above for runs you actually
+need. At 96×96 and above, `"device": "gpu"` cuts these times by roughly 9-16×.
 
 ---
 
@@ -218,6 +249,7 @@ Sweeps a list of velocities. For each, fits a log-linear decay to the total-mass
 timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
 `t*`, and reports the retained mass `m*` at `t*`.
 **Required:** `rg_param`, `ry_param`, `v_LIST` (list[float]), `w_param`, `T_param`, `N_LIST`
+**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v).
 **Output:** `char_time_analysis/<timestamp>/`
 - `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`
 - `char_t_analysis_plot.png` — `m*` against `v`, log x-axis
@@ -238,6 +270,7 @@ timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
 #### `Mass Analysis`
 Mass on each layer as a function of time.
 **Required:** `rg_param`, `ry_param`, `v_param`, `w_param`, `T_param`, `N_LIST`
+**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v).
 **Output:** five CSV series under `mass_analysis_results/`, plus PNGs when
 `save_png` is true —
 `diffusive/`, `advective/`, `total/`, `advective_over_total/`,
