@@ -61,9 +61,30 @@ def compute_and_send(computation_name, param_dict, job_id):
     except Exception as e:
         output = {"status": "error", "message": str(e)}
 
+    # Re-create the directory immediately before writing, not just at entry
+    # above. For a multi-day solve those two moments are separated by the whole
+    # run, and anything that removes the tree in between turns a completed
+    # computation into a job the worker reports as a hard crash -- which is
+    # exactly what happened to a 160x160 run on 2026-08-22: 82 hours of solving
+    # finished, the CSV and plot were written, and only this write failed.
+    #
+    # The result is also worth more than the directory it lives in, so fall back
+    # to the shared tree rather than losing it. A result in the wrong place can
+    # be found; a result never written cannot.
+    try:
+        os.makedirs(os.path.dirname(result_file), exist_ok=True)
+        target = result_file
+    except OSError as e:
+        from system_configuration import file_paths as fp2
+
+        target = os.path.join(str(fp2.json_output), f"result_{job_id}.json")
+        print(f"WARNING: could not create {os.path.dirname(result_file)} ({e}); "
+              f"writing the result to {target} instead")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+
     # Write to a temporary file and replace, so a poller never observes a
     # half-written result.
-    tmp = result_file + ".tmp"
+    tmp = target + ".tmp"
     with open(tmp, "w") as f:
         json.dump(output, f, default=str)
-    os.replace(tmp, result_file)
+    os.replace(tmp, target)
