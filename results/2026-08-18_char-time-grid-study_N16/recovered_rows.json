@@ -1,0 +1,35 @@
+{
+  "128": {
+    "grid": 128,
+    "v": 10000.0,
+    "t_star": 0.06235492919808238,
+    "m_star": 0.2766523725836013,
+    "wall_hours": 21.309166666666666,
+    "job_id": "ba8606eff3244902b828fdaab127c011",
+    "job_status": "succeeded",
+    "provenance": "reconstructed-from-log",
+    "source": "server/logs/worker-20260818-110804.log"
+  },
+  "144": {
+    "grid": 144,
+    "v": 10000.0,
+    "t_star": 0.06347574572709973,
+    "m_star": 0.2416546232126626,
+    "wall_hours": 43.68083333333333,
+    "job_id": "bd42ce92df6b4ae181b83ff2a104b2a2",
+    "job_status": "succeeded",
+    "provenance": "reconstructed-from-log",
+    "source": "server/logs/worker-20260818-110804.log"
+  },
+  "160": {
+    "grid": 160,
+    "v": 10000.0,
+    "t_star": 0.06445761252480976,
+    "m_star": 0.213518233821324,
+    "wall_hours": 82.36083333333333,
+    "job_id": "1583ec968bbf4361845a31791fb9ae58",
+    "job_status": "failed",
+    "provenance": "csv",
+    "source": "data_output\\jobs\\1583ec968bbf4361845a31791fb9ae58\\char_time_analysis\\2026-08-22_22-41\\char_t_analysis_data.csv"
+  }
+}

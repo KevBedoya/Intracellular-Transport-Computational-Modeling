@@ -16,14 +16,15 @@ spatial resolution.
 | Diffusion coefficient | D = 1 |
 | Extraction width | d_tube = 0 |
 | Initial condition | centred |
-| Grids | 48², 64², 80², 96², 112² |
+| Grids | 48², 64², 80², 96², 112², 128², 144², 160² |
 
 ## Contents (after the run completes)
 
 | File | |
 |---|---|
 | `jobs.json` | manifest: job id and estimated cost per grid |
-| `grid_study_results.csv` | numerical results — `grid, v, t_star, m_star, wall_hours, job_id` |
+| `grid_study_results.csv` | numerical results — `grid, v, t_star, m_star, wall_hours, job_id, provenance` |
+| `recovered_rows.json` | values for grids whose result file no longer exists on disk |
 | `mass_vs_grid_size.png` | m* against grid size |
 | `grid_study_report.tex` | parameters, wall time per grid, and the figure |
 | `grid_study_report.pdf` | the same report as a PDF |
@@ -56,13 +57,53 @@ would be ~13 hr. Peak memory ~1.2 GB.
 Estimates scale the measured 96² figure by `G⁶`, which follows from the
 scheme's stability limit `dT ∝ 1/(M²N²)`: `K ∝ G⁴` timesteps over `G²` patches.
 
-## Caveats
+## Results
 
-**No checkpointing.** A reboot or power cut loses the run; nothing resumes. The
-112² job is the exposure — 8 hours with no intermediate state.
+| Grid | t* | m* | Wall |
+|---|---|---|---|
+| 48² | 0.052357 | 0.670035 | 3.8 min |
+| 64² | 0.055390 | 0.546092 | 19.3 min |
+| 80² | 0.057689 | 0.450505 | 1.23 hr |
+| 96² | 0.059530 | 0.377297 | 3.68 hr |
+| 112² | 0.061058 | 0.320804 | 9.32 hr |
+| 128² | 0.062355 | 0.276652 | 21.31 hr |
+| 144² | 0.063476 | 0.241655 | 43.68 hr |
+| 160² | 0.064458 | 0.213518 | 82.36 hr |
 
-**`m*` can come back empty.** It is only defined when the fitted `t* < 0.1`; the
-solver records `NaN` with a warning rather than failing, so `t*` survives and the
-run is not wasted. Earlier N=16 runs gave `t* = 0.052` (48²) and `t* = 0.060`
-(96²), both comfortably inside the window, and `t*` drifts upward with
-refinement — so 112² is the one to check if a value is missing.
+`t*` rises monotonically with refinement and `m*` falls monotonically, with the
+local exponent of `m*` steepening from -0.71 (48->64) to -1.14 (144->160).
+
+## Provenance of the stored values
+
+Output files live on disk under each job's own output root and are not archived
+anywhere else, so the API can report a job as `succeeded` while its CSV is gone.
+That happened to this study: no job's original CSV survives except 160x160's.
+The `provenance` column records how each row was obtained.
+
+* `csv` — read from the job's result CSV, or carried forward from the value
+  published in this file when that CSV was still present.
+* `reconstructed-from-log` — 128x128 and 144x144. Their solves succeeded and
+  their CSVs were later removed. The values were rebuilt from the solver's
+  progress log, which records diffusive and advective mass every 10^6 steps, by
+  redoing the same log-linear fit. `scripts/recover_char_time_from_log.py`
+  performs the reconstruction and validates it against every grid whose value is
+  independently known, agreeing to within 0.006% on six of them and reproducing
+  160x160 to eight decimal places. It refuses to emit numbers if that check
+  fails.
+
+Regenerating the report is non-destructive: `report` prefers a live CSV, then a
+recovered value, then the value already published here, so a rerun cannot shrink
+the table.
+
+## Notes
+
+**160x160 is recorded as `failed`.** Its solve ran all 332,009,254 steps and
+wrote its CSV and plot; only the result-JSON write crashed, on a missing parent
+directory. Fixed in `compute_worker.compute_and_send`, which now creates the
+directory immediately before writing and falls back to the shared tree rather
+than raising.
+
+**Checkpointing exists but was not active for these runs.** The worker process
+predates it, and restarting the worker requeues running jobs. Runs from 128x128
+onward were therefore unprotected; 160x160 came within one write of losing 82
+hours.

@@ -34,7 +34,12 @@ N_TUBES = 16
 V = 10 ** 4
 W = 100
 T = 1
-GRIDS = [112, 96, 80, 64, 48]          # heaviest first: see module docstring
+GRIDS = [160, 144, 128, 112, 96, 80, 64, 48]   # heaviest first: see docstring
+
+# Values for grids whose result CSV no longer exists on disk, produced by
+# scripts/recover_char_time_from_log.py and validated there against every CSV
+# that does survive. Read as a fallback only -- a live CSV always wins.
+RECOVERED = os.path.join(OUT_DIR, "recovered_rows.json")
 
 # Reference point for the cost estimate: 96x96 measured at 3.28 hr post-
 # optimisation. Work scales as G^6 (dT ~ 1/G^4 gives K ~ G^4, times G^2 patches).
@@ -188,22 +193,97 @@ def _fetch_job_csv(job_id):
     }
 
 
+def _load_recovered():
+    """Recovered rows keyed by grid, or {} if none have been produced."""
+    if not os.path.exists(RECOVERED):
+        return {}
+    with open(RECOVERED) as f:
+        return {int(k): v for k, v in json.load(f).items()}
+
+
+def _load_prior_csv():
+    """Rows from the committed results CSV, keyed by grid.
+
+    Regenerating the report must never *lose* a result. Output files live on
+    disk under each job's output root and are not archived anywhere, so a job
+    can read `succeeded` while its CSV is long gone -- which is exactly what
+    happened to every grid in this study. Without this fallback, a rerun would
+    silently rewrite an eight-row table as a three-row one.
+
+    Lowest priority of the three sources: a live CSV wins, then an explicitly
+    recovered value, then whatever was published last.
+    """
+    import csv as _csv
+    path = os.path.join(OUT_DIR, "grid_study_results.csv")
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    with open(path) as f:
+        for r in _csv.DictReader(f):
+            try:
+                g = int(r["grid"])
+                wall = r.get("wall_hours") or ""
+                out[g] = {
+                    "grid": g,
+                    "v": float(r["v"]),
+                    "t_star": float(r["t_star"]),
+                    "m_star": float(r["m_star"]),
+                    "wall_hours": float(wall) if wall.strip() else None,
+                    "job_id": r.get("job_id", ""),
+                    "provenance": r.get("provenance") or "csv",
+                    "source_csv": "",
+                }
+            except (ValueError, KeyError):
+                continue
+    return out
+
+
 def cmd_report(a):
     man = _load_manifest()
     os.makedirs(OUT_DIR, exist_ok=True)
+    recovered = _load_recovered()
+    prior = _load_prior_csv()
 
     rows = []
     for e in man["jobs"]:
+        g = e["grid"]
         j = _get(f"/jobs/{e['job_id']}")
-        if j["status"] != "succeeded":
-            print(f"  {e['grid']}x{e['grid']}: {j['status']} -- skipped")
+        data = None
+        if j["status"] == "succeeded":
+            data = _fetch_job_csv(e["job_id"])
+        if data is not None:
+            data["provenance"] = "csv"
+            rows.append({"grid": g, "job_id": e["job_id"],
+                         "wall_hours": _elapsed_hours(j), **data})
             continue
-        data = _fetch_job_csv(e["job_id"])
-        if data is None:
-            print(f"  {e['grid']}x{e['grid']}: no CSV found -- skipped")
+
+        # Fall back to a recovered value. This covers two real cases: a job that
+        # succeeded but whose output directory was later removed from disk, and
+        # a job whose solve finished but which is recorded as failed because
+        # only its result-file write crashed. In both the science exists; the
+        # report says where each number came from rather than hiding the
+        # difference.
+        rec = recovered.get(g)
+        if rec is not None:
+            print(f"  {g}x{g}: {j['status']}, using recovered value "
+                  f"({rec['provenance']})")
+            rows.append({"grid": g, "job_id": rec["job_id"],
+                         "wall_hours": rec.get("wall_hours"),
+                         "v": rec["v"], "t_star": rec["t_star"],
+                         "m_star": rec["m_star"],
+                         "source_csv": rec.get("source", ""),
+                         "provenance": rec["provenance"]})
             continue
-        rows.append({"grid": e["grid"], "job_id": e["job_id"],
-                     "wall_hours": _elapsed_hours(j), **data})
+
+        prev = prior.get(g)
+        if prev is not None:
+            print(f"  {g}x{g}: {j['status']}, no CSV on disk -- keeping the "
+                  f"previously published value")
+            rows.append(dict(prev))
+            continue
+
+        why = "no CSV found" if j["status"] == "succeeded" else j["status"]
+        print(f"  {g}x{g}: {why}, nothing recovered or published -- skipped")
 
     if not rows:
         sys.exit("no successful jobs to report on")
@@ -212,11 +292,12 @@ def cmd_report(a):
     # numerical results, so the report has co-located source data
     csv_path = os.path.join(OUT_DIR, "grid_study_results.csv")
     with open(csv_path, "w", newline="\n") as f:
-        f.write("grid,v,t_star,m_star,wall_hours,job_id\n")
+        f.write("grid,v,t_star,m_star,wall_hours,job_id,provenance\n")
         for r in rows:
             wall = "" if r["wall_hours"] is None else f"{r['wall_hours']:.4f}"
             f.write(f"{r['grid']},{r['v']:.6g},{r['t_star']:.17g},"
-                    f"{r['m_star']:.17g},{wall},{r['job_id']}\n")
+                    f"{r['m_star']:.17g},{wall},{r['job_id']},"
+                    f"{r.get('provenance','csv')}\n")
     print(f"wrote {csv_path}")
 
     _make_plot(rows)
@@ -299,7 +380,7 @@ def _make_tex(man, rows):
         r"\usepackage{graphicx}",
         r"",
         r"\title{Characteristic-Time Grid Study\\ Mass at $t^{*}$ versus Grid Size}",
-        r"\date{18 August 2026}",
+        r"\date{18 August 2026, extended to $160 \times 160$ on 23 August 2026}",
         r"\author{}",
         r"",
         r"\begin{document}",
@@ -342,12 +423,15 @@ def _make_tex(man, rows):
         wall = ("--" if r["wall_hours"] is None else
                 (f"{r['wall_hours']*60:.1f} min" if r["wall_hours"] < 1
                  else f"{r['wall_hours']:.2f} hr"))
-        lines.append(rf"${r['grid']} \times {r['grid']}$ & {r['t_star']:.6f} "
+        lines.append(rf"${r['grid']} \times {r['grid']}$ "
+                     rf"& {r['t_star']:.6f} "
                      rf"& {r['m_star']:.6f} & {wall} \\")
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
         r"",
+    ]
+    lines += [
         r"\section*{Mass at $t^{*}$ versus grid size}",
         r"",
         r"\begin{center}",
@@ -399,7 +483,8 @@ def _make_pdf(man, rows, also_png=None):
     y -= 0.026
     text(0.5, y, "Mass at $t^{*}$ versus Grid Size", size=16, ha="center")
     y -= 0.028
-    text(0.5, y, "18 August 2026", size=10.5, ha="center")
+    text(0.5, y, "18 August 2026   ·   extended to 160 x 160, 23 August 2026",
+         size=10, ha="center")
     y -= 0.048
 
     text(L, y, "Parameters", size=13, weight="bold")
@@ -449,17 +534,26 @@ def _make_pdf(man, rows, also_png=None):
     y -= 0.045
 
     text(L, y, "Mass at $t^{*}$ versus grid size", size=13, weight="bold")
-    y -= 0.010
+    # Clear of the heading: the PNG carries its own title inside the image, and
+    # a smaller gap lets the two collide.
+    y -= 0.026
 
     png = os.path.join(OUT_DIR, "mass_vs_grid_size.png")
     if os.path.exists(png):
         img = mpimg.imread(png)
         h, w = img.shape[0], img.shape[1]
-        avail_w = 0.78
         # figure is A4, so convert the image aspect into figure fractions
         fig_w_in, fig_h_in = fig.get_size_inches()
-        disp_h = avail_w * (h / w) * (fig_w_in / fig_h_in)
-        ax = fig.add_axes([L, y - disp_h, avail_w, disp_h])
+        aspect = (h / w) * (fig_w_in / fig_h_in)
+        # Scale to whatever vertical space is actually left rather than assuming
+        # a fixed width: the table grows a row per grid and the provenance note
+        # adds several lines, either of which can push a fixed-size figure off
+        # the bottom of the page.
+        BOTTOM = 0.055
+        avail_w = min(0.78, max(0.0, y - BOTTOM) / aspect)
+        disp_h = avail_w * aspect
+        x0 = L + (0.78 - avail_w) / 2      # keep it centred on the text block
+        ax = fig.add_axes([x0, y - disp_h, avail_w, disp_h])
         ax.imshow(img)
         ax.axis("off")
 
