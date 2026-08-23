@@ -408,6 +408,12 @@ PARAMETER_HINTS = {
     "save_png": "save_png: Toggle to save png outputs. (boolean)",
     "save_csv": "save_csv: Toggle to save csv outputs. (boolean)",
     "show_plt": "show_plt: Toggle to display plots on a separate wiindow (off of UI). (boolean)",
+    "device": ("device: Where the time-stepping loop runs. 'cpu' (default, the "
+               "reference implementation), 'gpu' (~9x faster at 96x96 rising to "
+               "~16x at 160x160; fails if unsupported), or 'auto' (prefer gpu, "
+               "fall back to cpu). GPU results agree with CPU to ~1e-14 rather "
+               "than exactly, and gpu requires d_tube = 0 and a centred initial "
+               "condition. (str)"),
     "heat_plot_border": "heat_plot_border: Toggle to display borders on static DL heatplot outputs. (boolean)",
     "heatplot_colorscheme": "heatplot_colorscheme: selection of available colorscheme for static DL heatplots. (str)",
     "display_extraction": "display_extraction: Toggle to display DL-to-AL extraction borders on static DL heatplots. (boolean)",
