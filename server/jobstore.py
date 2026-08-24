@@ -46,10 +46,26 @@ CREATE TABLE IF NOT EXISTS jobs (
     error         TEXT,                   -- message, on failure
     output_dirs   TEXT,                   -- JSON list of paths produced
     git_sha       TEXT,
-    submitted_by  TEXT
+    submitted_by  TEXT,
+    est_seconds   REAL                    -- solo wall-time estimate at submission
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, submitted_at);
 """
+
+# Columns added after the table first shipped. SQLite has no "ADD COLUMN IF NOT
+# EXISTS", and the CREATE TABLE above is a no-op on an existing database, so new
+# columns have to be applied separately or every deployment would need its DB
+# rebuilt -- losing the job history.
+_MIGRATIONS = (
+    ("est_seconds", "ALTER TABLE jobs ADD COLUMN est_seconds REAL"),
+)
+
+
+def _migrate(conn):
+    have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+    for column, ddl in _MIGRATIONS:
+        if column not in have:
+            conn.execute(ddl)
 
 
 def default_db_path():
@@ -74,6 +90,7 @@ def connect(db_path=None):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -116,12 +133,22 @@ def submit(conn, computation, params, submitted_by=None, git_sha=None):
         raise ValueError("invalid parameters: " + "; ".join(
             f"{k}: {v}" for k, v in sorted(problems.items())))
 
+    # Cost the job once, at submission, and store it. Recomputing it later from
+    # the params would give the same answer, but storing it means the number the
+    # user was shown before launching is the same number the queue reports while
+    # it runs -- and it survives a change to the cost model.
+    try:
+        import estimate
+        est_seconds = estimate.seconds(computation, params)
+    except Exception:
+        est_seconds = None      # never block a submission over an estimate
+
     job_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO jobs (id, computation, params, status, submitted_at,"
-        " git_sha, submitted_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " git_sha, submitted_by, est_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (job_id, computation, json.dumps(params), STATUS_QUEUED, _utcnow(),
-         git_sha, submitted_by),
+         git_sha, submitted_by, est_seconds),
     )
     return job_id
 

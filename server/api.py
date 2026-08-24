@@ -239,6 +239,91 @@ def submit_job():
     return jsonify({"job_id": job_id, "status": jobstore.STATUS_QUEUED}), 201
 
 
+def _is_gpu(job):
+    return str((job.get("params") or {}).get("device", "")).lower() in (
+        "gpu", "cuda", "auto")
+
+
+def _with_effective_estimate(jobs, running):
+    """Annotate jobs with the estimate that accounts for a shared GPU.
+
+    ``est_seconds`` is the solo figure stored at submission -- what the job would
+    take with the card to itself. ``est_seconds_effective`` stretches it by the
+    number of GPU jobs currently sharing, which is the number worth showing in a
+    Remaining column: three concurrent jobs turned a 6.6 hr solo estimate into a
+    22.5 hr actual, so the unadjusted figure is not a small error.
+
+    Backfills ``est_seconds`` for rows submitted before the column existed, so
+    the queue does not show a column of dashes for the jobs already in flight.
+    """
+    import estimate as est_mod
+
+    gpu_running = sum(1 for j in running if _is_gpu(j))
+    out = []
+    for j in jobs:
+        j = dict(j)
+        if j.get("est_seconds") is None:
+            try:
+                j["est_seconds"] = est_mod.seconds(j.get("computation"),
+                                                   j.get("params") or {})
+            except Exception:
+                j["est_seconds"] = None
+        base = j.get("est_seconds")
+        if base is None:
+            j["est_seconds_effective"] = None
+        elif j.get("status") == jobstore.STATUS_RUNNING and _is_gpu(j):
+            j["est_seconds_effective"] = base * est_mod.share_factor(
+                "gpu", gpu_running)
+        else:
+            j["est_seconds_effective"] = base
+        j["gpu_running"] = gpu_running
+        out.append(j)
+    return out
+
+
+@app.post("/helpers/estimate")
+def estimate_job():
+    """Cost a parameter set without submitting it.
+
+    Server-side so the browser form and the queue agree. The model used to live
+    in the page and knew only about the CPU, which made a GPU job's quoted wall
+    time wrong by more than an order of magnitude.
+    """
+    import estimate as est_mod
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "body must be a JSON object"}), 400
+    params = body.get("params") or {}
+    if not isinstance(params, dict):
+        return jsonify({"error": "'params' must be an object"}), 400
+
+    info = est_mod.describe(body.get("computation"), params,
+                            device=body.get("device"))
+
+    # How many GPU jobs are already running, so the caller can show what the
+    # card being shared will actually cost.
+    conn = _conn()
+    try:
+        running = jobstore.list_jobs(conn, status=jobstore.STATUS_RUNNING,
+                                     limit=1000)
+    finally:
+        conn.close()
+    gpu_running = sum(
+        1 for j in running
+        if str((j.get("params") or {}).get("device", "")).lower()
+        in ("gpu", "cuda", "auto"))
+
+    info["gpu_running"] = gpu_running
+    if info["seconds"] is not None and info["device"] == "gpu":
+        # The submitted job would be one more sharer than are running now.
+        info["seconds_shared"] = info["seconds"] * est_mod.share_factor(
+            "gpu", gpu_running + 1)
+    else:
+        info["seconds_shared"] = info["seconds"]
+    return jsonify(info)
+
+
 @app.get("/jobs")
 def list_jobs():
     try:
@@ -255,10 +340,15 @@ def list_jobs():
 
     conn = _conn()
     try:
-        return jsonify({"jobs": jobstore.list_jobs(conn, status=status,
-                                                   limit=limit)})
+        jobs = jobstore.list_jobs(conn, status=status, limit=limit)
+        # Sharing depends on what else is running, so it cannot be stored on the
+        # row at submission -- it has to be computed against the live queue.
+        running = (jobs if status == jobstore.STATUS_RUNNING
+                   else jobstore.list_jobs(conn, status=jobstore.STATUS_RUNNING,
+                                           limit=1000))
     finally:
         conn.close()
+    return jsonify({"jobs": _with_effective_estimate(jobs, running)})
 
 
 @app.get("/jobs/<job_id>")
@@ -266,13 +356,15 @@ def get_job(job_id):
     conn = _conn()
     try:
         job = jobstore.get(conn, job_id)
+        running = jobstore.list_jobs(conn, status=jobstore.STATUS_RUNNING,
+                                     limit=1000) if job else []
     except ValueError as e:            # ambiguous prefix
         return jsonify({"error": str(e)}), 400
     finally:
         conn.close()
     if job is None:
         return jsonify({"error": f"no job {job_id}"}), 404
-    return jsonify(job)
+    return jsonify(_with_effective_estimate([job], running)[0])
 
 
 @app.delete("/jobs/<job_id>")

@@ -52,15 +52,41 @@ function wallHours(job) {
   return (isNaN(a) || isNaN(b)) ? null : (b - a) / 3600000;
 }
 
-/* Cost model: the scheme's stability limit gives K ~ G^4 timesteps over G^2
- * patches, so total work ~ G^6. Anchored on a measured 96x96 run. The 1.10
- * factor is the observed overshoot across the completed grid-study jobs. */
-const COST_ANCHOR_GRID = 96, COST_ANCHOR_HOURS = 3.28, COST_FUDGE = 1.10;
-function estimateHours(rg, ry, T) {
-  if (!rg || !ry) return null;
-  const g = Math.sqrt(rg * ry);                       // non-square: use the mean
-  return COST_ANCHOR_HOURS * COST_FUDGE * Math.pow(g / COST_ANCHOR_GRID, 6)
-         * (T && T > 0 ? T : 1);
+/* The cost model lives on the server (server/estimate.py), not here.
+ *
+ * It used to be this function: CPU-only, so a GPU job was quoted more than an
+ * order of magnitude too slow -- 176x176 was told 5.6 days and finished in 22.5
+ * hours. Duplicating a device-aware model in the page would just reintroduce the
+ * same drift, so the page asks and the server answers.
+ *
+ * Cached by request key because updateEstimate() runs on every keystroke. */
+const estCache = new Map();
+let estSeq = 0;
+
+async function fetchEstimate(computation, params) {
+  if (!params.rg_param || !params.ry_param) return null;
+  const key = JSON.stringify([computation, params.rg_param, params.ry_param,
+                              params.T_param, params.device || 'cpu',
+                              (params.v_LIST || []).length,
+                              params.domain_radius, params.D]);
+  if (estCache.has(key)) return estCache.get(key);
+  try {
+    const r = await fetch('helpers/estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ computation, params }),
+    });
+    if (!r.ok) return null;
+    const info = await r.json();
+    estCache.set(key, info);
+    return info;
+  } catch (e) {
+    return null;                 // an estimate is never worth blocking submit
+  }
+}
+
+function hoursOf(seconds) {
+  return seconds == null ? null : seconds / 3600;
 }
 
 // ------------------------------------------------------------- computations
@@ -298,13 +324,34 @@ function onFormChange() {
     (f) => params[f.name] === undefined).map((f) => f.name);
   $('submit').disabled = missing.length > 0 || Object.keys(errors).length > 0;
 
+  updateEstimateAsync(params);
+}
+
+/* Separate and sequence-guarded: the fetch is async, so a slow reply for an
+ * older parameter set must not overwrite a newer one. */
+async function updateEstimateAsync(params) {
   const est = $('est');
-  const hrs = estimateHours(params.rg_param, params.ry_param, params.T_param);
+  const seq = ++estSeq;
+  const info = await fetchEstimate($('comp').value, params);
+  if (seq !== estSeq) return;                  // superseded while in flight
+  const hrs = hoursOf(info && info.seconds);
   if (hrs == null) { est.hidden = true; return; }
+
+  const dev = info.device === 'gpu' ? 'GPU' : 'CPU';
+  const shared = hoursOf(info.seconds_shared);
+  let text = `Estimated wall time on ${dev}: ${fmtDuration(hrs)}`;
+
+  // If GPU jobs are already running, the card gets time-sliced and the solo
+  // figure is optimistic. Say so with a number rather than a caveat.
+  if (info.device === 'gpu' && info.gpu_running > 0 && shared > hrs * 1.05) {
+    text += `  — but ${info.gpu_running} GPU job${info.gpu_running > 1 ? 's are' : ' is'}`
+      + ` already running, so expect nearer ${fmtDuration(shared)} while sharing.`;
+  }
+  const heavy = (shared == null ? hrs : shared) >= 1;
+  if (heavy) text += '  Long run, and there is no checkpointing: a reboot loses it.';
   est.hidden = false;
-  est.className = 'est' + (hrs >= 1 ? ' heavy' : '');
-  est.textContent = `Estimated wall time: ${fmtDuration(hrs)}`
-    + (hrs >= 1 ? '  — long run, and there is no checkpointing: a reboot loses it.' : '');
+  est.className = 'est' + (heavy ? ' heavy' : '');
+  est.textContent = text;
 }
 
 // ------------------------------------------------------------------ submit
@@ -312,10 +359,15 @@ async function submitJob() {
   const { params, errors } = collect();
   if (Object.keys(errors).length) { showFieldErrors(errors); return; }
 
-  const hrs = estimateHours(params.rg_param, params.ry_param, params.T_param);
-  if (hrs != null && hrs >= 1 &&
-      !confirm(`This is estimated at ${fmtDuration(hrs)} and cannot be `
-               + `resumed if interrupted.\n\nQueue it?`)) return;
+  // Confirm against the figure the user will actually experience -- the shared
+  // one when the GPU is already busy, not the solo one.
+  const info = await fetchEstimate($('comp').value, params);
+  const hrs = hoursOf(info && (info.seconds_shared ?? info.seconds));
+  if (hrs != null && hrs >= 1) {
+    const dev = info.device === 'gpu' ? 'GPU' : 'CPU';
+    if (!confirm(`This is estimated at ${fmtDuration(hrs)} on ${dev} and cannot `
+                 + `be resumed if interrupted.\n\nQueue it?`)) return;
+  }
 
   $('submit').disabled = true;
   try {
@@ -365,14 +417,25 @@ function jobsHtml(jobs) {
     // would differ every tick, rebuilding the DOM and resetting scroll again.
     let elapsed, remaining;
     if (j.status === 'running' && j.started_at) {
-      const est = estimateHours(p.rg_param, p.ry_param, p.T_param);
+      // Server-supplied: est_seconds is the solo figure stored when the job was
+      // queued; est_seconds_effective stretches it for however many GPU jobs are
+      // currently sharing the card.
+      const solo = hoursOf(j.est_seconds);
+      const est = hoursOf(j.est_seconds_effective != null
+                          ? j.est_seconds_effective : j.est_seconds);
+      const dev = String(p.device || 'cpu').toLowerCase();
+      const devLabel = (dev === 'gpu' || dev === 'auto') ? 'GPU' : 'CPU';
+      let why = `Estimated on ${devLabel} from the cost model shown before`
+        + ` launch; not a measurement of progress.`;
+      if (est != null && solo != null && est > solo * 1.05) {
+        why += ` Solo it would be ${fmtDuration(solo)}, stretched to`
+          + ` ${fmtDuration(est)} by ${j.gpu_running} GPU jobs sharing the card.`;
+      }
       elapsed = `<td class="mono live" data-since="${j.started_at}"></td>`;
       remaining = est == null
         ? '<td class="mono">—</td>'
         : `<td class="mono live" data-since="${j.started_at}"`
-          + ` data-est="${est}" title="Estimated from the same grid-size cost`
-          + ` model shown before launch (work grows as the sixth power of grid`
-          + ` size); not a measurement of progress."></td>`;
+          + ` data-est="${est}" title="${why}"></td>`;
     } else {
       // Finished, queued or cancelled: nothing ticks, so render it inline.
       elapsed = `<td class="mono">${fmtDuration(wallHours(j))}</td>`;
