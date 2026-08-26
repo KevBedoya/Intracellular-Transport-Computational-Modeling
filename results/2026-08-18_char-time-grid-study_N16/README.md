@@ -16,14 +16,14 @@ spatial resolution.
 | Diffusion coefficient | D = 1 |
 | Extraction width | d_tube = 0 |
 | Initial condition | centred |
-| Grids | 48², 64², 80², 96², 112², 128², 144², 160² |
+| Grids | 48² through 224² in steps of 16 (12 grids) |
 
 ## Contents (after the run completes)
 
 | File | |
 |---|---|
 | `jobs.json` | manifest: job id and estimated cost per grid |
-| `grid_study_results.csv` | numerical results — `grid, v, t_star, m_star, wall_hours, job_id, provenance` |
+| `grid_study_results.csv` | numerical results — `grid, v, t_star, m_star, wall_hours, device, job_id, provenance` |
 | `recovered_rows.json` | values for grids whose result file no longer exists on disk |
 | `mass_vs_grid_size.png` | m* against grid size |
 | `grid_study_report.tex` | parameters, wall time per grid, and the figure |
@@ -59,19 +59,63 @@ scheme's stability limit `dT ∝ 1/(M²N²)`: `K ∝ G⁴` timesteps over `G²` 
 
 ## Results
 
-| Grid | t* | m* | Wall |
-|---|---|---|---|
-| 48² | 0.052357 | 0.670035 | 3.8 min |
-| 64² | 0.055390 | 0.546092 | 19.3 min |
-| 80² | 0.057689 | 0.450505 | 1.23 hr |
-| 96² | 0.059530 | 0.377297 | 3.68 hr |
-| 112² | 0.061058 | 0.320804 | 9.32 hr |
-| 128² | 0.062355 | 0.276652 | 21.31 hr |
-| 144² | 0.063476 | 0.241655 | 43.68 hr |
-| 160² | 0.064458 | 0.213518 | 82.36 hr |
+| Grid | t* | m* | Device | Wall |
+|---|---|---|---|---|
+| 48² | 0.052357 | 0.670035 | CPU | 3.8 min |
+| 64² | 0.055390 | 0.546092 | CPU | 19.3 min |
+| 80² | 0.057689 | 0.450505 | CPU | 1.23 hr |
+| 96² | 0.059530 | 0.377297 | CPU | 3.68 hr |
+| 112² | 0.061058 | 0.320804 | CPU | 9.32 hr |
+| 128² | 0.062355 | 0.276652 | CPU | 21.31 hr |
+| 144² | 0.063476 | 0.241655 | CPU | 43.68 hr |
+| 160² | 0.064458 | 0.213518 | CPU | 82.36 hr |
+| 176² | 0.065327 | 0.190594 | GPU | 22.48 hr |
+| 192² | 0.066104 | 0.171680 | GPU | 30.32 hr |
+| 208² | 0.066804 | 0.155899 | GPU | 35.26 hr |
+| 224² | 0.067439 | 0.142591 | GPU | 54.01 hr |
 
-`t*` rises monotonically with refinement and `m*` falls monotonically, with the
-local exponent of `m*` steepening from -0.71 (48->64) to -1.14 (144->160).
+**Wall times are not comparable across the device boundary.** The four GPU jobs
+ran concurrently on one card, which time-slices between them, so each took
+roughly three times its solo cost. Solo, 224² is about 27 hr on the GPU against
+an extrapolated 24 days on the CPU.
+
+## m* does not converge under refinement
+
+Worth stating plainly, because the raw ratios invite the opposite reading. The
+successive ratios `m*(G+16)/m*(G)` do rise toward 1 — 0.815, 0.825, ..., 0.893,
+0.901, 0.908, 0.915 — but that is mostly because the *grid* ratio does, falling
+from 1.333 to 1.077 as the fixed +16 step lands on a larger base.
+
+Normalising for that, `m* ~ G^-p`, and `p` rises and then settles:
+
+| G | 64 | 96 | 128 | 160 | 176 | 192 | 208 | 224 |
+|---|---|---|---|---|---|---|---|---|
+| p | 0.711 | 0.973 | 1.109 | 1.175 | 1.192 | 1.201 | 1.205 | 1.204 |
+
+`p` has plateaued at **≈ 1.204** — flat over the last three refinements and
+slightly turned over, with Aitken extrapolation of the sequence giving 1.2041.
+A pure power law fits the tail to an rms residual of 4e-4 in log space.
+
+So `m*` is **not** tending to a nonzero grid-independent value; it decays as
+roughly `G^-1.2` and tends to zero. Fitting `m* = m_inf + A·G^-q` returns a
+negative `m_inf` on every window, tightening toward zero as the window narrows,
+which is what a sequence heading to zero looks like under that model.
+
+Note that `p ≈ 1.204`, not 1. A plausible mechanism for a vanishing `m*` is that
+the microtubules occupy single rays (`d_tube = 0`), so their angular extent
+`dθ = 2π/ry` shrinks as the grid refines — but that alone would give `p → 1`.
+The measured exponent is meaningfully above 1, so if the tube width is the cause
+it is not the whole of it. Testing it needs a sweep at fixed *physical* `d_tube`
+rather than fixed cell count; that is cheap at 48²–96² and has not been run.
+
+`t*` behaves differently: it rises monotonically and its increments shrink
+steadily (0.00303, 0.00230, 0.00184, ..., 0.00070, 0.00063), so unlike `m*` it is
+plausibly heading somewhere finite. But it is **not** converged here. Aitken
+extrapolation of the `t*` sequence still drifts upward with each grid added —
+0.07267 through 192², 0.07311 through 208², 0.07360 through 224² — so the limit
+is somewhere near 0.073-0.074 rather than the 0.0674 measured at 224², and the
+sequence has not settled enough to pin it down. Extending the study would tighten
+`t*`; it will not rescue `m*`.
 
 ## Provenance of the stored values
 
@@ -81,7 +125,8 @@ That happened to this study: no job's original CSV survives except 160x160's.
 The `provenance` column records how each row was obtained.
 
 * `csv` — read from the job's result CSV, or carried forward from the value
-  published in this file when that CSV was still present.
+  published in this file when that CSV was still present. All four GPU rows
+  (176²–224²) were read from live CSVs.
 * `reconstructed-from-log` — 128x128 and 144x144. Their solves succeeded and
   their CSVs were later removed. The values were rebuilt from the solver's
   progress log, which records diffusive and advective mass every 10^6 steps, by

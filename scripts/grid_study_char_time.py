@@ -34,7 +34,7 @@ N_TUBES = 16
 V = 10 ** 4
 W = 100
 T = 1
-GRIDS = [160, 144, 128, 112, 96, 80, 64, 48]   # heaviest first: see docstring
+GRIDS = [224, 208, 192, 176, 160, 144, 128, 112, 96, 80, 64, 48]   # heaviest first
 
 # Values for grids whose result CSV no longer exists on disk, produced by
 # scripts/recover_char_time_from_log.py and validated there against every CSV
@@ -231,6 +231,7 @@ def _load_prior_csv():
                     "wall_hours": float(wall) if wall.strip() else None,
                     "job_id": r.get("job_id", ""),
                     "provenance": r.get("provenance") or "csv",
+                    "device": (r.get("device") or "cpu").lower(),
                     "source_csv": "",
                 }
             except (ValueError, KeyError):
@@ -253,8 +254,15 @@ def cmd_report(a):
             data = _fetch_job_csv(e["job_id"])
         if data is not None:
             data["provenance"] = "csv"
+            # Which device produced it. Once the study spans both, a bare wall
+            # time is misleading -- 224^2 took 54 hr on a shared GPU and would
+            # have taken 24 days on the CPU, so the column needs the label to
+            # mean anything.
             rows.append({"grid": g, "job_id": e["job_id"],
-                         "wall_hours": _elapsed_hours(j), **data})
+                         "wall_hours": _elapsed_hours(j),
+                         "device": str((j.get("params") or {}).get(
+                             "device") or "cpu").lower(),
+                         **data})
             continue
 
         # Fall back to a recovered value. This covers two real cases: a job that
@@ -272,7 +280,9 @@ def cmd_report(a):
                          "v": rec["v"], "t_star": rec["t_star"],
                          "m_star": rec["m_star"],
                          "source_csv": rec.get("source", ""),
-                         "provenance": rec["provenance"]})
+                         "provenance": rec["provenance"],
+                         "device": str((j.get("params") or {}).get(
+                             "device") or "cpu").lower()})
             continue
 
         prev = prior.get(g)
@@ -292,11 +302,12 @@ def cmd_report(a):
     # numerical results, so the report has co-located source data
     csv_path = os.path.join(OUT_DIR, "grid_study_results.csv")
     with open(csv_path, "w", newline="\n") as f:
-        f.write("grid,v,t_star,m_star,wall_hours,job_id,provenance\n")
+        f.write("grid,v,t_star,m_star,wall_hours,device,job_id,provenance\n")
         for r in rows:
             wall = "" if r["wall_hours"] is None else f"{r['wall_hours']:.4f}"
             f.write(f"{r['grid']},{r['v']:.6g},{r['t_star']:.17g},"
-                    f"{r['m_star']:.17g},{wall},{r['job_id']},"
+                    f"{r['m_star']:.17g},{wall},"
+                    f"{r.get('device','cpu')},{r['job_id']},"
                     f"{r.get('provenance','csv')}\n")
     print(f"wrote {csv_path}")
 
@@ -340,7 +351,9 @@ def _make_plot(rows):
 
     ax.plot(g, m, "-o", color=SERIES, linewidth=2, markersize=9,
             markeredgecolor=SURFACE, markeredgewidth=2, zorder=3)
-    for x, y in zip(g, m):
+    for i, (x, y) in enumerate(zip(g, m)):
+        if i not in (0, len(g) - 1):
+            continue
         ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points",
                     xytext=(0, 11), ha="center", fontsize=8.5, color=SECOND)
 
@@ -352,7 +365,7 @@ def _make_plot(rows):
         ax.spines[s].set_color(BASE)
     ax.tick_params(colors=MUTED, labelsize=9, length=0)
     ax.set_xticks(g)
-    ax.set_xticklabels([f"{x}x{x}" for x in g])
+    ax.set_xticklabels([str(x) for x in g])
     ax.set_xlabel("grid size", fontsize=10, color=SECOND)
     ax.set_ylabel("m* — mass at t*", fontsize=10, color=SECOND)
     title = (f"Mass at the characteristic time vs grid size  "
@@ -380,7 +393,7 @@ def _make_tex(man, rows):
         r"\usepackage{graphicx}",
         r"",
         r"\title{Characteristic-Time Grid Study\\ Mass at $t^{*}$ versus Grid Size}",
-        r"\date{18 August 2026, extended to $160 \times 160$ on 23 August 2026}",
+        r"\date{18 August 2026, extended to $224 \times 224$ on 26 August 2026}",
         r"\author{}",
         r"",
         r"\begin{document}",
@@ -414,18 +427,19 @@ def _make_tex(man, rows):
         r"\section*{Results and wall time}",
         r"",
         r"\noindent",
-        r"\begin{tabular}{lrrr}",
+        r"\begin{tabular}{lrrlr}",
         r"\toprule",
-        r"Grid & {$t^{*}$} & {$m^{*}$} & {Wall time} \\",
+        r"Grid & {$t^{*}$} & {$m^{*}$} & {Device} & {Wall time} \\",
         r"\midrule",
     ]
     for r in rows:
         wall = ("--" if r["wall_hours"] is None else
                 (f"{r['wall_hours']*60:.1f} min" if r["wall_hours"] < 1
                  else f"{r['wall_hours']:.2f} hr"))
+        dev = r.get("device", "cpu").upper()
         lines.append(rf"${r['grid']} \times {r['grid']}$ "
                      rf"& {r['t_star']:.6f} "
-                     rf"& {r['m_star']:.6f} & {wall} \\")
+                     rf"& {r['m_star']:.6f} & {dev} & {wall} \\")
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
@@ -483,7 +497,7 @@ def _make_pdf(man, rows, also_png=None):
     y -= 0.026
     text(0.5, y, "Mass at $t^{*}$ versus Grid Size", size=16, ha="center")
     y -= 0.028
-    text(0.5, y, "18 August 2026   ·   extended to 160 x 160, 23 August 2026",
+    text(0.5, y, "18 August 2026   ·   extended to 224 x 224, 26 August 2026",
          size=10, ha="center")
     y -= 0.048
 
@@ -513,10 +527,11 @@ def _make_pdf(man, rows, also_png=None):
 
     text(L, y, "Results and wall time", size=13, weight="bold")
     y -= 0.030
-    cols = [L + 0.02, L + 0.22, L + 0.42, L + 0.62]
+    cols = [L + 0.02, L + 0.20, L + 0.38, L + 0.555, L + 0.65]
     rule(y + 0.006)
     y -= 0.016
-    for x, h in zip(cols, ["Grid", "$t^{*}$", "$m^{*}$", "Wall time"]):
+    for x, h in zip(cols, ["Grid", "$t^{*}$", "$m^{*}$", "Device",
+                           "Wall time"]):
         text(x, y, h, size=10)
     y -= 0.017
     rule(y + 0.005, lw=0.7)
@@ -527,7 +542,7 @@ def _make_pdf(man, rows, also_png=None):
                  else f"{r['wall_hours']:.2f} hr"))
         for x, v in zip(cols, [f"{r['grid']} x {r['grid']}",
                                f"{r['t_star']:.6f}", f"{r['m_star']:.6f}",
-                               wall]):
+                               r.get('device', 'cpu').upper(), wall]):
             text(x, y, v, size=10)
         y -= 0.019
     rule(y + 0.006)
