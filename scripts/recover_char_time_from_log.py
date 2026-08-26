@@ -263,9 +263,46 @@ def main():
     print(f"\nvalidated against {n_val} surviving CSV(s), all within "
           f"{TOLERANCE_PCT}%")
 
+    # The fit slope, which older runs did not record.
+    #
+    # collect_char_time_mass computed the slope of log10(total mass) across the
+    # window, used it for t*, and dropped it. It is recoverable wherever the mass
+    # log survives -- either directly, as (y2 - y1) / (x2 - x1), or from the
+    # recorded t* as y2 / (x2 - t*), which is the same number and serves as a
+    # cross-check. Runs that went through the GPU path log nothing per step, so
+    # for those it is not recoverable at all; they are written as blank rather
+    # than estimated.
+    slope_rows = []
+    for g in sorted(series):
+        y_a = interp_log10(series[g], X1)
+        y_b = interp_log10(series[g], X2)
+        if not y_a or not y_b:
+            continue
+        y1, y2 = math.log10(y_a), math.log10(y_b)
+        slope = (y2 - y1) / (X2 - X1)
+        row = {"grid": g, "fit_slope": slope,
+               "total_mass_at_t1": y_a, "total_mass_at_t2": y_b,
+               "cross_check_via_t_star": "", "agreement_pct": ""}
+        if g in known:
+            t_star = known[g][0]
+            if X2 - t_star != 0:
+                via = y2 / (X2 - t_star)
+                row["cross_check_via_t_star"] = via
+                row["agreement_pct"] = abs(slope - via) / abs(slope) * 100
+        slope_rows.append(row)
+
     if a.check:
         print("--check given; nothing written")
         return
+
+    if slope_rows:
+        path = os.path.join(OUT_DIR, "fit_slopes.csv")
+        with open(path, "w", newline="\n") as f:
+            w = csv.DictWriter(f, fieldnames=list(slope_rows[0]))
+            w.writeheader()
+            for r in slope_rows:
+                w.writerow(r)
+        print(f"wrote {os.path.relpath(path, ROOT)} ({len(slope_rows)} grid(s))")
     with open(RECOVERED, "w", newline="\n") as f:
         json.dump(recovered, f, indent=2)
         f.write("\n")

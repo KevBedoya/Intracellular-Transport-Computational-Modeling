@@ -1083,6 +1083,12 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
 
     m_star_dict = {}
     t_star_dict = {}
+    # The log-linear fit behind t*: slope, intercept, and the two masses it was
+    # fitted to. Reported alongside t* so the fit can be checked and reused.
+    slope_dict = {}
+    intercept_dict = {}
+    tm_x1_dict = {}
+    tm_x2_dict = {}
 
     # adjacent time points for the log scale line computation
     x1 = 0.4
@@ -1148,6 +1154,21 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
         t_star = -b/m
         t_star_dict[v_param] = t_star
 
+        # Record the fit itself, not just what it implies.
+        #
+        # The slope is the decay rate of log10(total mass) across the window and
+        # is a result in its own right -- it is what t* is derived from, and it
+        # varies with grid size in a way t* alone does not show. It used to be a
+        # local that went out of scope, which meant recovering it afterwards
+        # needed the mass timeseries, and that is not retained: for the GPU runs
+        # nothing is logged per step, so the slope was simply unrecoverable
+        # short of re-solving. The two window masses are kept too, since they
+        # are the entire input to the fit and cost two floats.
+        slope_dict[v_param] = m
+        intercept_dict[v_param] = b
+        tm_x1_dict[v_param] = MA_TM_timeseries[t1]
+        tm_x2_dict[v_param] = MA_TM_timeseries[t2]
+
         # compute the mass corresponding to t_star, and then record
         k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
         k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
@@ -1190,10 +1211,18 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     plt.savefig(plot_location, bbox_inches='tight')
 
     data_location = os.path.join(output_directory, 'char_t_analysis_data.csv')
+    # v, t_star and m_star stay in the leading columns so anything already
+    # reading this file by position keeps working; the fit columns are appended.
     df = pd.DataFrame({
         'v': v_axis,
         't_star': [t_star_dict[v_param] for v_param in v_axis],
-        'm_star': m_axis
+        'm_star': m_axis,
+        'fit_slope': [slope_dict[v_param] for v_param in v_axis],
+        'fit_intercept': [intercept_dict[v_param] for v_param in v_axis],
+        'fit_window_t1': [x1] * len(v_axis),
+        'fit_window_t2': [x2] * len(v_axis),
+        'total_mass_at_t1': [tm_x1_dict[v_param] for v_param in v_axis],
+        'total_mass_at_t2': [tm_x2_dict[v_param] for v_param in v_axis],
     })
     df.to_csv(data_location, index=False)
 
