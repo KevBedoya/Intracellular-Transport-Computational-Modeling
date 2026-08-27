@@ -7,7 +7,7 @@
 \sisetup{round-mode=places, round-precision=6, table-format=1.6}
 
 \title{Characteristic-Time Analysis:\\ Retained Mass versus Microtubule Count}
-\date{15 August 2026}
+\date{15 August 2026, grid dependence added 27 August 2026}
 \author{}
 
 \begin{document}
@@ -22,13 +22,13 @@ Common to every run in both tables:
 \noindent
 \begin{tabular}{ll}
 \toprule
-Advective velocity            & $v = 10^{4}$ \\
-Switch rates                  & $a = b = w = 100$ \\
-Dimensionless solution time   & $T = 1$ \\
-Domain radius                 & $R = 1$ \\
-Diffusion coefficient         & $D = 1$ \\
-Microtubule extraction width  & $d_{\mathrm{tube}} = 0$ \\
-Initial condition             & centred \\
+Advective velocity & $v = 10^{4}$ \\
+Switch rates & $a = b = w = 100$ \\
+Dimensionless solution time & $T = 1$ \\
+Domain radius & $R = 1$ \\
+Diffusion coefficient & $D = 1$ \\
+Microtubule extraction width & $d_{\mathrm{tube}} = 0$ \\
+Initial condition & centred \\
 \bottomrule
 \end{tabular}
 
@@ -63,7 +63,7 @@ characteristic time, and $m^{*}$ the retained mass evaluated at $t^{*}$.
     S[table-format=2.0]
     S[table-format=1.6]
     S[table-format=1.6]
-    S[table-format=2.1]
+    S[table-format=2.2]
   }
 \toprule
 {$N$} & {$t^{*}$} & {$m^{*}$} & {Wall time (min)} \\
@@ -72,6 +72,38 @@ characteristic time, and $m^{*}$ the retained mass evaluated at $t^{*}$.
  8 & 0.061825 & 0.295470 & 10.7 \\
 16 & 0.052357 & 0.670035 & 11.1 \\
 24 & 0.046611 & 0.858021 & 11.6 \\
+\bottomrule
+\end{tabular}
+
+\clearpage
+
+\section*{Grid dependence at $N = 16$}
+
+\noindent
+The same parameters, with the microtubule count held at $N = 16$ and
+the grid varied. The $48 \times 48$ and $96 \times 96$ rows reproduce
+the $N = 16$ rows of the tables above. $m$ is the slope of
+$\log_{10}$ of total mass across the fit window $t \in [0.4, 0.5]$,
+from which $t^{*}$ is derived.
+
+\medskip
+\noindent
+\begin{tabular}{lrrrlr}
+\toprule
+Grid & {$t^{*}$} & {$m^{*}$} & {$m$} & {Device} & {Wall time} \\
+\midrule
+$48 \times 48$ & 0.052357 & 0.670035 & -0.369056 & CPU & 3.8 min \\
+$64 \times 64$ & 0.055390 & 0.546092 & -0.527038 & CPU & 19.3 min \\
+$80 \times 80$ & 0.057689 & 0.450505 & -0.666989 & CPU & 1.23 hr \\
+$96 \times 96$ & 0.059530 & 0.377297 & -0.790103 & CPU & 3.68 hr \\
+$112 \times 112$ & 0.061058 & 0.320804 & -0.898529 & CPU & 9.32 hr \\
+$128 \times 128$ & 0.062355 & 0.276652 & -0.994425 & CPU & 21.31 hr \\
+$144 \times 144$ & 0.063476 & 0.241655 & -1.079686 & CPU & 43.68 hr \\
+$160 \times 160$ & 0.064458 & 0.213518 & -1.155910 & CPU & 82.36 hr \\
+$176 \times 176$ & 0.065327 & 0.190594 & -1.224422 & GPU & 22.48 hr \\
+$192 \times 192$ & 0.066104 & 0.171680 & -1.286315 & GPU & 30.32 hr \\
+$208 \times 208$ & 0.066804 & 0.155899 & -- & GPU & 35.26 hr \\
+$224 \times 224$ & 0.067439 & 0.142591 & -- & GPU & 54.01 hr \\
 \bottomrule
 \end{tabular}
 

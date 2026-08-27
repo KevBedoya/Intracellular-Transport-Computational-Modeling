@@ -75,6 +75,46 @@ LINE = re.compile(
     r"Current AL mass:\s+([\d.eE+-]+)")
 
 
+def _grid_of_job(job_id):
+    """Grid size for a job id.
+
+    Reads the job store first, because a slope may come from a job that is not
+    part of this study's manifest -- the three grids re-solved at T=0.52 purely
+    to recover their fit slope are exactly that case, and keying off the
+    manifest alone silently skipped them. Falls back to the manifest so the
+    script still works if the database is gone.
+
+    Local sources only, no API call, so this stays usable when the server is
+    down.
+    """
+    global _JOB_GRIDS
+    if _JOB_GRIDS is None:
+        _JOB_GRIDS = {}
+        man = os.path.join(OUT_DIR, "jobs.json")
+        if os.path.exists(man):
+            for e in json.load(open(man)).get("jobs", []):
+                _JOB_GRIDS[e["job_id"]] = e["grid"]
+        db = os.path.join(ROOT, "data_output", "jobs.sqlite3")
+        if os.path.exists(db):
+            import sqlite3
+            try:
+                conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+                for jid, params in conn.execute(
+                        "SELECT id, params FROM jobs"):
+                    try:
+                        rg = json.loads(params).get("rg_param")
+                    except (ValueError, AttributeError):
+                        continue
+                    if rg:
+                        _JOB_GRIDS.setdefault(jid, int(rg))
+            except sqlite3.Error:
+                pass
+    return _JOB_GRIDS.get(job_id)
+
+
+_JOB_GRIDS = None
+
+
 def newest_worker_log():
     logs = sorted(glob.glob(os.path.join(ROOT, "server", "logs", "worker-*.log")))
     if not logs:
@@ -272,8 +312,43 @@ def main():
     # cross-check. Runs that went through the GPU path log nothing per step, so
     # for those it is not recoverable at all; they are written as blank rather
     # than estimated.
+    # Slopes recorded directly by the solver, which newer runs write to their
+    # result CSV. Always preferred over reconstruction: it is the exact value the
+    # fit used, with no interpolation between log samples.
+    direct = {}
+    for path in glob.glob(os.path.join(
+            ROOT, "data_output", "jobs", "*", "**",
+            "char_t_analysis_data.csv"), recursive=True):
+        try:
+            for r in csv.DictReader(open(path)):
+                if not (r.get("fit_slope") or "").strip():
+                    continue
+                job_dir = path.split(os.sep + "jobs" + os.sep)[1].split(os.sep)[0]
+                grid = _grid_of_job(job_dir)
+                if grid is None:
+                    continue
+                direct[grid] = {
+                    "fit_slope": float(r["fit_slope"]),
+                    "total_mass_at_t1": float(r["total_mass_at_t1"]),
+                    "total_mass_at_t2": float(r["total_mass_at_t2"]),
+                    "source": "solver",
+                }
+        except (OSError, ValueError, KeyError, IndexError):
+            continue
+
     slope_rows = []
-    for g in sorted(series):
+    for g in sorted(set(series) | set(direct)):
+        if g in direct:
+            d = direct[g]
+            slope_rows.append({
+                "grid": g, "fit_slope": d["fit_slope"],
+                "total_mass_at_t1": d["total_mass_at_t1"],
+                "total_mass_at_t2": d["total_mass_at_t2"],
+                "cross_check_via_t_star": "", "agreement_pct": "",
+                "source": "solver"})
+            continue
+        if g not in series:
+            continue
         y_a = interp_log10(series[g], X1)
         y_b = interp_log10(series[g], X2)
         if not y_a or not y_b:
@@ -282,7 +357,8 @@ def main():
         slope = (y2 - y1) / (X2 - X1)
         row = {"grid": g, "fit_slope": slope,
                "total_mass_at_t1": y_a, "total_mass_at_t2": y_b,
-               "cross_check_via_t_star": "", "agreement_pct": ""}
+               "cross_check_via_t_star": "", "agreement_pct": "",
+               "source": "reconstructed-from-log"}
         if g in known:
             t_star = known[g][0]
             if X2 - t_star != 0:
