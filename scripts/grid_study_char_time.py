@@ -201,6 +201,27 @@ def _load_recovered():
         return {int(k): v for k, v in json.load(f).items()}
 
 
+def _load_fit_slopes():
+    """Fit slope per grid, from fit_slopes.csv, or {} if it has not been built.
+
+    The slope is the decay rate of log10(total mass) across the window that t*
+    is fitted on, so it belongs beside t* rather than in a separate file only.
+    Produced by scripts/recover_char_time_from_log.py.
+    """
+    import csv as _csv
+    path = os.path.join(OUT_DIR, "fit_slopes.csv")
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    with open(path) as f:
+        for r in _csv.DictReader(f):
+            try:
+                out[int(r["grid"])] = float(r["fit_slope"])
+            except (ValueError, KeyError, TypeError):
+                continue
+    return out
+
+
 def _load_prior_csv():
     """Rows from the committed results CSV, keyed by grid.
 
@@ -232,6 +253,9 @@ def _load_prior_csv():
                     "job_id": r.get("job_id", ""),
                     "provenance": r.get("provenance") or "csv",
                     "device": (r.get("device") or "cpu").lower(),
+                    "fit_slope": (float(r["fit_slope"])
+                                  if (r.get("fit_slope") or "").strip()
+                                  else None),
                     "source_csv": "",
                 }
             except (ValueError, KeyError):
@@ -244,6 +268,7 @@ def cmd_report(a):
     os.makedirs(OUT_DIR, exist_ok=True)
     recovered = _load_recovered()
     prior = _load_prior_csv()
+    slopes = _load_fit_slopes()
 
     rows = []
     for e in man["jobs"]:
@@ -298,15 +323,28 @@ def cmd_report(a):
     if not rows:
         sys.exit("no successful jobs to report on")
     rows.sort(key=lambda r: r["grid"])
+    # fit_slopes.csv is authoritative, but fall back to whatever was published
+    # last so a missing or partial slopes file cannot blank a column that was
+    # already correct -- the same non-destructive rule the rows themselves follow.
+    for r in rows:
+        s = slopes.get(r["grid"])
+        if s is None:
+            s = (prior.get(r["grid"]) or {}).get("fit_slope")
+        r["fit_slope"] = s
+    absent = [r["grid"] for r in rows if r["fit_slope"] is None]
+    if absent:
+        print(f"  note: no fit slope for {absent}; shown as -- in the report")
 
     # numerical results, so the report has co-located source data
     csv_path = os.path.join(OUT_DIR, "grid_study_results.csv")
     with open(csv_path, "w", newline="\n") as f:
-        f.write("grid,v,t_star,m_star,wall_hours,device,job_id,provenance\n")
+        f.write("grid,v,t_star,m_star,fit_slope,wall_hours,device,job_id,provenance\n")
         for r in rows:
             wall = "" if r["wall_hours"] is None else f"{r['wall_hours']:.4f}"
             f.write(f"{r['grid']},{r['v']:.6g},{r['t_star']:.17g},"
-                    f"{r['m_star']:.17g},{wall},"
+                    f"{r['m_star']:.17g},"
+                    f"{'' if r.get('fit_slope') is None else format(r['fit_slope'], '.17g')},"
+                    f"{wall},"
                     f"{r.get('device','cpu')},{r['job_id']},"
                     f"{r.get('provenance','csv')}\n")
     print(f"wrote {csv_path}")
@@ -427,9 +465,9 @@ def _make_tex(man, rows):
         r"\section*{Results and wall time}",
         r"",
         r"\noindent",
-        r"\begin{tabular}{lrrlr}",
+        r"\begin{tabular}{lrrrlr}",
         r"\toprule",
-        r"Grid & {$t^{*}$} & {$m^{*}$} & {Device} & {Wall time} \\",
+        r"Grid & {$t^{*}$} & {$m^{*}$} & {$m$} & {Device} & {Wall time} \\",
         r"\midrule",
     ]
     for r in rows:
@@ -437,9 +475,11 @@ def _make_tex(man, rows):
                 (f"{r['wall_hours']*60:.1f} min" if r["wall_hours"] < 1
                  else f"{r['wall_hours']:.2f} hr"))
         dev = r.get("device", "cpu").upper()
+        slope = ("--" if r.get("fit_slope") is None
+                 else f"{r['fit_slope']:.6f}")
         lines.append(rf"${r['grid']} \times {r['grid']}$ "
                      rf"& {r['t_star']:.6f} "
-                     rf"& {r['m_star']:.6f} & {dev} & {wall} \\")
+                     rf"& {r['m_star']:.6f} & {slope} & {dev} & {wall} \\")
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
@@ -527,10 +567,10 @@ def _make_pdf(man, rows, also_png=None):
 
     text(L, y, "Results and wall time", size=13, weight="bold")
     y -= 0.030
-    cols = [L + 0.02, L + 0.20, L + 0.38, L + 0.555, L + 0.65]
+    cols = [L + 0.02, L + 0.17, L + 0.32, L + 0.47, L + 0.615, L + 0.70]
     rule(y + 0.006)
     y -= 0.016
-    for x, h in zip(cols, ["Grid", "$t^{*}$", "$m^{*}$", "Device",
+    for x, h in zip(cols, ["Grid", "$t^{*}$", "$m^{*}$", "$m$", "Device",
                            "Wall time"]):
         text(x, y, h, size=10)
     y -= 0.017
@@ -540,9 +580,11 @@ def _make_pdf(man, rows, also_png=None):
         wall = ("--" if r["wall_hours"] is None else
                 (f"{r['wall_hours']*60:.1f} min" if r["wall_hours"] < 1
                  else f"{r['wall_hours']:.2f} hr"))
+        slope = ("--" if r.get("fit_slope") is None
+                 else f"{r['fit_slope']:.6f}")
         for x, v in zip(cols, [f"{r['grid']} x {r['grid']}",
                                f"{r['t_star']:.6f}", f"{r['m_star']:.6f}",
-                               r.get('device', 'cpu').upper(), wall]):
+                               slope, r.get('device', 'cpu').upper(), wall]):
             text(x, y, v, size=10)
         y -= 0.019
     rule(y + 0.006)
