@@ -117,6 +117,49 @@ is somewhere near 0.073-0.074 rather than the 0.0674 measured at 224², and the
 sequence has not settled enough to pin it down. Extending the study would tighten
 `t*`; it will not rescue `m*`.
 
+## The fit slope m does not converge
+
+`m` is the slope of `log10(total mass)` across the fit window `t in [0.4, 0.5]`,
+the quantity `t*` is derived from. It is in `fit_slopes.csv` for all twelve
+grids, and in the report table.
+
+| G | 48 | 64 | 80 | 96 | 112 | 128 | 144 | 160 | 176 | 192 | 208 | 224 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| m | -0.369 | -0.527 | -0.667 | -0.790 | -0.899 | -0.994 | -1.080 | -1.156 | -1.224 | -1.286 | -1.342 | -1.394 |
+
+Unlike the `m*` exponent, this one is **not** settling. The successive
+differences shrink, but by a ratio that is itself *rising* toward 1 -- 0.886,
+0.880, 0.881, 0.884, 0.889, 0.894, 0.899, 0.903, 0.908, 0.912 -- so each
+refinement buys proportionally less than the last. Aitken's estimate of the
+limit recedes with every grid added: -1.833 through 176 squared, then -1.865,
+-1.895, and -1.922 through 224 squared.
+
+So at 224 squared, `m = -1.394` against an apparent limit somewhere past -1.9
+that has not stopped moving. Extending the grid further will not close that gap
+at any tractable size.
+
+Three quantities, three behaviours, worth keeping straight:
+
+* the `m*` exponent `p` **converged**, plateauing at 1.204;
+* `t*` is **plausibly convergent but unresolved**, with Aitken drifting up
+  through 0.0736 and no plateau yet;
+* `m` is **not usefully convergent** on this range at all.
+
+### Recovering m for older runs
+
+`collect_char_time_mass` did not record the slope until 27 August 2026; it was a
+local used for `t*` and discarded. For the nine CPU grids it was rebuilt from the
+worker log, which preserves total mass every 1e6 steps as a side effect of
+progress printing, and cross-checked two independent ways (directly, and as
+`y2 / (x2 - t*)`) agreeing to within 0.0007%.
+
+The GPU path prints nothing per step, so for 192, 208 and 224 squared no such
+fallback existed and the slope was unrecoverable from stored artifacts. Those
+three were re-solved at `T = 0.52` -- the least that still reaches the fit window
+-- which cost about half a full run and returned `t*` identical to the original
+`T = 1` jobs, confirming the shortcut is exact. `fit_slopes.csv` records which
+source each value came from.
+
 ## Provenance of the stored values
 
 Output files live on disk under each job's own output root and are not archived
