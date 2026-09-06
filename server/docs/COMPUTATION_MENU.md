@@ -274,8 +274,20 @@ two-dimensional.
 `workers` — how many points to solve at once on the CPU; `0` (default) uses one
 per core, less one.
 **Output:** `ab_grid_char_time/<timestamp>/`
-- `ab_grid_char_t_data.csv` — one row per `(a, b)`: `a, b, v, t_star, m_star`, then the fit columns
-- `ab_grid_char_t_heatmap.png` — `t*` over the grid, rows `a`, columns `b`
+
+Every filename ends in the parameters held fixed across the run — `v`, the
+microtubule count and the grid — written as `v10000_N4_96x96` for the example
+above. They are not columns, so a file lifted out of its timestamped directory
+still says what produced it.
+
+- `ab_grid_char_t_<stem>.csv` — one row per `(a, b)`: `a, b, t_star, m_star`, then the fit columns (`fit_slope`, `fit_intercept`, the window, and the two masses it was fitted to)
+- `ab_grid_m_star_vs_a_<stem>.png` — `m*` against `a`, one curve per `b`
+- `ab_grid_m_star_vs_b_<stem>.png` — `m*` against `b`, one curve per `a`
+- `ab_grid_m_star_intensity_<stem>.png` — `m*` over the grid, `a` on the vertical axis and `b` on the horizontal, one square per solved point coloured by magnitude
+
+The two slice plots use a log x-axis when the rates span a decade or more and are
+all positive — which is the usual sweep — and a linear one otherwise, since `0`
+is a legal rate and a log axis would drop it silently.
 
 ```bash
 curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{

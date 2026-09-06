@@ -152,8 +152,8 @@ def test_grid_covers_the_cartesian_product():
     assert len(frame) == len(a_list) * len(b_list)
     assert list(zip(frame["a"], frame["b"])) == [(a, b) for a in a_list
                                                  for b in b_list]
-    assert list(frame["v"]) == [V] * len(frame), "v must be one value per row"
     assert frame["t_star"].notna().all(), "a well-posed grid produced no t*"
+    assert frame["m_star"].notna().all(), "a well-posed grid produced no m*"
 
 
 def test_switch_rates_actually_reach_the_solver():
@@ -171,13 +171,44 @@ def test_switch_rates_actually_reach_the_solver():
         f"reaching the solver:\n{frame[['a', 'b', 't_star']]}")
 
 
-def test_writes_both_outputs():
+def test_writes_the_csv_and_all_three_figures():
     result = launch.collect_ab_grid_char_time(
-        RG, RY, [1.0], [1.0], V, T, N_LIST, show_plt=False, workers=1)
+        RG, RY, [1.0, 10.0], [1.0, 10.0], V, T, N_LIST, show_plt=False,
+        workers=1)
+
     assert os.path.isfile(result["csv"])
-    assert os.path.isfile(result["plot"])
-    assert result["points"] == 1
+    assert set(result["plots"]) == {"m_star_vs_a", "m_star_vs_b",
+                                    "m_star_intensity"}
+    for name, path in result["plots"].items():
+        assert os.path.isfile(path), f"{name} was not written"
+        assert os.path.getsize(path) > 0, f"{name} is empty"
+    assert result["points"] == 4
     assert result["device"] == "cpu"
+
+    # Every file names the parameters held fixed across the run, so one lifted
+    # out of its timestamped directory still says what produced it.
+    stem = f"v{V:g}_N{len(N_LIST)}_{RG}x{RY}"
+    for path in [result["csv"], *result["plots"].values()]:
+        assert stem in os.path.basename(path), \
+            f"{os.path.basename(path)} does not carry the run parameters"
+
+
+def test_csv_leads_with_the_four_result_columns():
+    """a, b, t_star, m_star are the results and come first, in that order.
+
+    The fit columns follow rather than being dropped: the slope is what t* is
+    derived from, and neither it nor the two window masses can be recovered
+    afterwards -- the mass timeseries is not retained, and a GPU run logs
+    nothing per step.
+    """
+    frame = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [1.0], [1.0], V, T, N_LIST, show_plt=False, workers=1))
+    assert list(frame.columns[:4]) == ["a", "b", "t_star", "m_star"], \
+        f"unexpected leading columns: {list(frame.columns)}"
+    assert "fit_slope" in frame.columns
+    # v, N and the grid do not vary within a run, so they belong in the
+    # filename, not in a column repeated on every row.
+    assert "v" not in frame.columns
 
 
 def test_invalid_input_is_refused():

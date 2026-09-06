@@ -1347,6 +1347,116 @@ def _ab_grid_char_time_worker(job):
     return row
 
 
+def _ab_grid_stem(v_param, n_tubes, rg_param, ry_param):
+    """Filename fragment naming the parameters held fixed across a grid.
+
+    v, the microtubule count and the grid resolution do not vary within a run,
+    so they are not columns in the CSV -- they go here, and every file the run
+    writes carries them. A file that has been moved out of its timestamped
+    directory then still says what produced it.
+
+    ``%g`` is safe in a filename for every value that reaches it: it emits only
+    digits, ``.``, ``-``, ``+`` and ``e``. Velocities are routinely 1e4, which
+    is why the format is not ``%f``.
+    """
+    return f"v{v_param:g}_N{n_tubes}_{rg_param}x{ry_param}"
+
+
+def _ab_grid_log_x(values):
+    """Whether an axis over these switch rates should be logarithmic.
+
+    Switch rates are swept by decade far more often than linearly (1, 10, 100),
+    and on a linear axis that puts every point but the largest against the
+    origin. But a log axis silently drops a non-positive value, and 0 is a legal
+    rate -- it means "no switching in this direction" -- so this only applies
+    when it cannot lose a point, and only when there is a real span to justify
+    it.
+    """
+    if len(values) < 2 or any(v <= 0 for v in values):
+        return False
+    return max(values) / min(values) >= 10.0
+
+
+def _ab_grid_slice_plot(path, x_values, series_values, grid, x_symbol,
+                        x_label, series_symbol, subtitle, show_plt):
+    """m* against one switch rate, one curve per value of the other.
+
+    ``grid`` is indexed [x][series], so the caller passes the m* grid for the
+    a-axis and its transpose for the b-axis.
+
+    Drawn on its own Figure and closed afterwards rather than through the pyplot
+    state machine: this is called three times per run, and pyplot would let each
+    figure accumulate the previous one's artists -- the bug documented in
+    main.py, which made a sweep's PNGs each show every earlier job's points.
+    """
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    for j, series in enumerate(series_values):
+        ax.plot(x_values, grid[:, j], marker='o',
+                label=f"{series_symbol} = {series:g}")
+    if _ab_grid_log_x(x_values):
+        ax.set_xscale('log')
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(r"($m^*$) mass retained at $t^*$")
+    ax.set_title(f"$m^*({x_symbol})$, {subtitle}")
+    # No legend title: each entry already names the parameter, and a "b" header
+    # above three rows reading "b = 1" is noise.
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.savefig(path, bbox_inches='tight')
+    if show_plt:
+        plt.show()
+    plt.close(fig)
+    return path
+
+
+def _ab_grid_intensity_plot(path, a_list, b_list, grid, subtitle, show_plt):
+    """m* over the (a, b) grid: a vertical, b horizontal, colour by magnitude.
+
+    One square per solved point, so the axes are categorical -- the tick labels
+    are the requested rates, evenly spaced, not positioned by value. That is
+    deliberate: the rates are usually swept by decade, and spacing the cells by
+    value would make a 1-10-100 sweep three cells of wildly different widths.
+    """
+    fig, ax = plt.subplots(figsize=(max(4.0, 1.1 * len(b_list) + 2.5),
+                                    max(3.5, 1.0 * len(a_list) + 2.0)))
+    # origin='lower' so a increases upward, the way it reads on an axis.
+    image = ax.imshow(grid, origin='lower', aspect='auto', cmap='viridis')
+    ax.set_xticks(range(len(b_list)))
+    ax.set_xticklabels([f"{b:g}" for b in b_list])
+    ax.set_yticks(range(len(a_list)))
+    ax.set_yticklabels([f"{a:g}" for a in a_list])
+    ax.set_xlabel(r"($b$) switch rate onto the advective layer")
+    ax.set_ylabel(r"($a$) switch rate onto the diffusive layer")
+    ax.set_title(r"$m^*(a, b)$, " + subtitle)
+    fig.colorbar(image, ax=ax, label=r"($m^*$) mass retained at $t^*$")
+
+    # Print the value in each cell on a grid small enough to read it. On a
+    # coarse grid -- which is what these are, being one full solve per cell --
+    # the number is the result and the colour is only the summary. A cell whose
+    # fit degenerated is NaN: imshow leaves it blank, so it is labelled rather
+    # than left looking like a missing tile.
+    #
+    # Text colour follows the cell rather than being fixed: viridis runs from
+    # dark blue to bright yellow, so a single colour is illegible over half the
+    # range whichever one is chosen.
+    if len(a_list) * len(b_list) <= 64:
+        finite = grid[np.isfinite(grid)]
+        midpoint = (finite.min() + finite.max()) / 2 if finite.size else 0.0
+        for i in range(len(a_list)):
+            for j in range(len(b_list)):
+                value = grid[i, j]
+                ax.text(j, i, "--" if not np.isfinite(value) else f"{value:.4g}",
+                        ha='center', va='center', fontsize=7,
+                        color='k' if np.isfinite(value) and value > midpoint
+                        else 'w')
+
+    fig.savefig(path, bbox_inches='tight')
+    if show_plt:
+        plt.show()
+    plt.close(fig)
+    return path
+
+
 def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_param,
                               N_LIST, MA_collection_factor=5, domain_radius=1.0,
                               D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
@@ -1366,10 +1476,18 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     shared ``_char_time_point`` kernel, so a 1x1 grid at (w, w) reproduces
     ``collect_char_time_mass`` for that velocity exactly.
 
-    Outputs, under ``data_output/ab_grid_char_time/<timestamp>/``:
-      * ``ab_grid_char_t_data.csv``  -- one row per (a, b), with t*, m* and the
-        fit each was derived from
-      * ``ab_grid_char_t_heatmap.png`` -- t* over the grid
+    Outputs, under ``data_output/ab_grid_char_time/<timestamp>/``. Every
+    filename carries the parameters held fixed across the run -- ``v``, the
+    microtubule count and the grid -- so a file moved out of its directory still
+    says what produced it (``<stem>`` below is e.g. ``v10000_N4_96x96``):
+
+      * ``ab_grid_char_t_<stem>.csv`` -- one row per (a, b): ``a, b, t_star,
+        m_star``, then the fit each was derived from
+      * ``ab_grid_m_star_vs_a_<stem>.png`` -- m* against a, one curve per b
+      * ``ab_grid_m_star_vs_b_<stem>.png`` -- m* against b, one curve per a
+      * ``ab_grid_m_star_intensity_<stem>.png`` -- m* over the grid, a on the
+        vertical axis and b on the horizontal, one square per solved point
+        coloured by magnitude
 
     Returns the paths it wrote, so a caller that is not reading the output tree
     still learns where the results went.
@@ -1472,14 +1590,25 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     # --- tabulate ----------------------------------------------------------
     output_directory = _create_unique_timestamp_dir(fp.ab_grid_char_time_output)
 
-    data_location = os.path.join(output_directory, 'ab_grid_char_t_data.csv')
-    # a, b, v, t_star and m_star lead; the fit that produced them follows, in
-    # the same column names collect_char_time_mass writes, so the two CSVs can
-    # be concatenated.
+    # v, N and the grid resolution are fixed across the whole run, so they are
+    # not columns -- they name the file instead. That way a CSV lifted out of
+    # its timestamped directory still says which run it came from, which the
+    # velocity sweep's fixed 'char_t_analysis_data.csv' does not.
+    stem = _ab_grid_stem(v_param, len(N_LIST), rg_param, ry_param)
+
+    data_location = os.path.join(output_directory, f'ab_grid_char_t_{stem}.csv')
+    # a, b, t_star, m_star are the results proper and lead the file.
+    #
+    # The fit that produced them is appended, under the same column names
+    # collect_char_time_mass writes, so the two CSVs stay concatenable. Those
+    # columns are kept rather than dropped for the reason they were added to the
+    # velocity sweep in the first place: the slope is what t* is derived from and
+    # is a result in its own right, the mass timeseries it came from is not
+    # retained, and on a GPU run nothing is logged per step -- so once they are
+    # out of this file they are unrecoverable short of re-solving.
     df = pd.DataFrame({
         'a': [r["a"] for r in rows],
         'b': [r["b"] for r in rows],
-        'v': [v_param] * len(rows),
         't_star': [r["t_star"] for r in rows],
         'm_star': [r["m_star"] for r in rows],
         'fit_slope': [r["fit_slope"] for r in rows],
@@ -1491,56 +1620,45 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     })
     df.to_csv(data_location, index=False)
 
-    # --- heatmap -----------------------------------------------------------
-    # Rows are a, columns are b, in the order they were supplied. Drawn on its
-    # own Figure and closed afterwards rather than through the pyplot state
-    # machine, so two grids run back to back in one process do not share axes.
-    t_star_grid = np.array([r["t_star"] for r in rows],
+    # --- figures -----------------------------------------------------------
+    # Rows are a, columns are b, in the order they were supplied -- which is the
+    # order `points` was built in, so the reshape is the inverse of that loop.
+    m_star_grid = np.array([r["m_star"] for r in rows],
                            dtype=np.float64).reshape(len(a_list), len(b_list))
 
-    fig, ax = plt.subplots(figsize=(max(4.0, 1.1 * len(b_list) + 2.5),
-                                    max(3.5, 1.0 * len(a_list) + 2.0)))
-    image = ax.imshow(t_star_grid, origin='lower', aspect='auto', cmap='viridis')
-    ax.set_xticks(range(len(b_list)))
-    ax.set_xticklabels([f"{b:g}" for b in b_list])
-    ax.set_yticks(range(len(a_list)))
-    ax.set_yticklabels([f"{a:g}" for a in a_list])
-    ax.set_xlabel(r"($b$) switch rate onto the advective layer")
-    ax.set_ylabel(r"($a$) switch rate onto the diffusive layer")
-    ax.set_title(r"$t^*(a, b)$, " + f"N={len(N_LIST)}, " + f"v={v_param:g}, "
-                 + f"grid={rg_param}x{ry_param}")
-    fig.colorbar(image, ax=ax, label=r"characteristic time $t^*$")
+    subtitle = (f"N={len(N_LIST)}, v={v_param:g}, "
+                f"grid={rg_param}x{ry_param}")
 
-    # Print the value in each cell on a grid small enough to read it. On a
-    # coarse grid -- which is what these are, being one full solve per cell --
-    # the number is the result and the colour is only the summary.
-    #
-    # Text colour follows the cell rather than being fixed: viridis runs from
-    # dark blue to bright yellow, so a single colour is illegible over half the
-    # range whichever one is chosen.
-    if len(a_list) * len(b_list) <= 64:
-        finite = t_star_grid[np.isfinite(t_star_grid)]
-        midpoint = (finite.min() + finite.max()) / 2 if finite.size else 0.0
-        for i in range(len(a_list)):
-            for j in range(len(b_list)):
-                value = t_star_grid[i, j]
-                ax.text(j, i, "--" if not np.isfinite(value) else f"{value:.4g}",
-                        ha='center', va='center', fontsize=7,
-                        color='k' if np.isfinite(value) and value > midpoint
-                        else 'w')
-
-    plot_location = os.path.join(output_directory, 'ab_grid_char_t_heatmap.png')
-    fig.savefig(plot_location, bbox_inches='tight')
+    plots = {
+        # m* against a, one curve per b. A 2-D sweep read as 1-D slices: it is
+        # the only way to see whether the two rates act independently, which the
+        # intensity map can only suggest.
+        "m_star_vs_a": _ab_grid_slice_plot(
+            os.path.join(output_directory, f'ab_grid_m_star_vs_a_{stem}.png'),
+            x_values=a_list, series_values=b_list, grid=m_star_grid,
+            x_symbol="a",
+            x_label=r"($a$) switch rate onto the diffusive layer",
+            series_symbol="b", subtitle=subtitle, show_plt=show_plt),
+        # m* against b, one curve per a: the same data, transposed.
+        "m_star_vs_b": _ab_grid_slice_plot(
+            os.path.join(output_directory, f'ab_grid_m_star_vs_b_{stem}.png'),
+            x_values=b_list, series_values=a_list, grid=m_star_grid.T,
+            x_symbol="b",
+            x_label=r"($b$) switch rate onto the advective layer",
+            series_symbol="a", subtitle=subtitle, show_plt=show_plt),
+        "m_star_intensity": _ab_grid_intensity_plot(
+            os.path.join(output_directory,
+                         f'ab_grid_m_star_intensity_{stem}.png'),
+            a_list=a_list, b_list=b_list, grid=m_star_grid,
+            subtitle=subtitle, show_plt=show_plt),
+    }
 
     print(f'(a, b) grid characteristic-time data saved to {data_location}')
-    print(f'(a, b) grid characteristic-time heatmap saved to {plot_location}')
-
-    if show_plt:
-        plt.show()
-    plt.close(fig)
+    for path in plots.values():
+        print(f'(a, b) grid characteristic-time plot saved to {path}')
 
     return {"output_dir": output_directory, "csv": data_location,
-            "plot": plot_location, "points": len(rows),
+            "plots": plots, "points": len(rows),
             "device": DEVICE_GPU if on_gpu else DEVICE_CPU}
 # ^==================================== Characteristic time over an (a, b) grid ====================================^
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
