@@ -15,6 +15,7 @@ recorded in docs/GPU_PLAN.md. Re-measure them if the hardware changes.
 """
 
 import math
+import os
 
 # --- GPU: fitted to the measured 128^2 (34.1 us/step) and 160^2 (43.5) points.
 # Reproduces 96^2 to within 4%. Affine in patch count, because the per-step cost
@@ -75,6 +76,19 @@ def steps(rg, ry, T=1.0, domain_radius=1.0, D=1.0):
     return int(math.floor(float(T) / dT))
 
 
+def ab_grid_lanes(workers, points):
+    """How many (a, b) points an ab-grid job solves at once on the CPU.
+
+    Mirrors launch._ab_grid_worker_count. Duplicated for the same reason
+    ``steps`` duplicates ``compute_K`` -- so the API process does not import
+    numba to answer an estimate -- and kept honest the same way, by
+    tests/test_estimate.py asserting the two agree.
+    """
+    if workers and int(workers) > 0:
+        return max(1, min(int(workers), points))
+    return max(1, min(points, (os.cpu_count() or 2) - 1))
+
+
 def us_per_step(rg, ry, device="cpu"):
     patches = float(rg) * float(ry)
     if str(device).lower() in ("gpu", "cuda"):
@@ -115,6 +129,18 @@ def seconds(computation, params, device=None):
     # A velocity sweep solves once per velocity, sequentially.
     v_list = params.get("v_LIST")
     runs = len(v_list) if isinstance(v_list, (list, tuple)) and v_list else 1
+
+    # An (a, b) grid solves the cartesian product of the two lists. On the CPU
+    # those points run several at a time, so wall time is the number of rounds,
+    # not the number of points. On the GPU they run one at a time -- a single
+    # cooperative kernel already occupies the whole card -- so every point costs
+    # its own solve.
+    a_list, b_list = params.get("a_list"), params.get("b_list")
+    if (isinstance(a_list, (list, tuple)) and a_list
+            and isinstance(b_list, (list, tuple)) and b_list):
+        pts = len(a_list) * len(b_list)
+        runs = (pts if dev == "gpu"
+                else math.ceil(pts / ab_grid_lanes(params.get("workers"), pts)))
 
     solve = K * us_per_step(rg, ry, dev) * 1e-6 * runs * FUDGE
     return solve + STARTUP_SECONDS

@@ -39,9 +39,9 @@ computation below. Send real JSON types — `96` and `[0, 4, 8]`, not `"96"` and
 Always pass `"show_plt": false`. It is a desktop-GUI setting that tries to open
 a plot window; on a headless server it does nothing useful.
 
-### Choosing a device (`Mass Analysis`, `Characteristic Time (mass vs v)`)
+### Choosing a device (`Mass Analysis`, `Characteristic Time (mass vs v)`, `Characteristic Time (a,b grid)`)
 
-These two computations accept `"device"`, which selects where the time-stepping
+These three computations accept `"device"`, which selects where the time-stepping
 loop runs. It defaults to `"cpu"`, so existing job definitions are unaffected.
 
 | value | behaviour |
@@ -219,7 +219,7 @@ duration is an output rather than an input, so it is not known in advance.
 
 ---
 
-## The 18 computations
+## The 19 computations
 
 ### Scalar results (no files — read the `result` field)
 
@@ -249,7 +249,7 @@ Sweeps a list of velocities. For each, fits a log-linear decay to the total-mass
 timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
 `t*`, and reports the retained mass `m*` at `t*`.
 **Required:** `rg_param`, `ry_param`, `v_LIST` (list[float]), `w_param`, `T_param`, `N_LIST`
-**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v).
+**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 **Output:** `char_time_analysis/<timestamp>/`
 - `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`
 - `char_t_analysis_plot.png` — `m*` against `v`, log x-axis
@@ -263,6 +263,52 @@ timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
 > full solves sequentially inside one job, whereas five separate jobs run four
 > at a time.
 
+#### `Characteristic Time (a,b grid)`
+The same fit, swept over the two switch rates instead of over velocity. `a_list`
+holds the rates onto the diffusive layer, `b_list` the rates onto the advective
+layer, and **every pair in `a_list × b_list` is solved** — a 4×4 grid is sixteen
+full solves. `v_param` is a single value here, not a list: the grid is already
+two-dimensional.
+**Required:** `rg_param`, `ry_param`, `a_list` (list[float]), `b_list` (list[float]), `v_param`, `T_param`, `N_LIST`
+**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`workers` — how many points to solve at once on the CPU; `0` (default) uses one
+per core, less one.
+**Output:** `ab_grid_char_time/<timestamp>/`
+- `ab_grid_char_t_data.csv` — one row per `(a, b)`: `a, b, v, t_star, m_star`, then the fit columns
+- `ab_grid_char_t_heatmap.png` — `t*` over the grid, rows `a`, columns `b`
+
+```bash
+curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
+  "computation": "Characteristic Time (a,b grid)",
+  "params": {
+    "rg_param": 96, "ry_param": 96,
+    "a_list": [1, 10, 100], "b_list": [1, 10, 100],
+    "v_param": 10000, "T_param": 1,
+    "N_LIST": [0, 4, 8, 12],
+    "show_plt": false, "workers": 4
+  },
+  "submitted_by": "your-name"
+}'
+```
+
+> **The two devices parallelise this differently, and the estimate reflects it.**
+> On the CPU the points run in separate processes, `workers` at a time, so a 3×3
+> grid over 4 workers costs three rounds rather than nine solves. On the GPU they
+> run one at a time: a single cooperative kernel already occupies every SM, so a
+> second concurrent point would only time-slice with the first.
+>
+> `workers` defaults to one per core less one, which is right for a machine to
+> itself. The job worker already runs up to four jobs at a time, so **pin
+> `workers` when submitting a grid into a busy queue** or it will contend with
+> whatever else is running.
+>
+> Both the fit-window rule and the degenerate-fit behaviour are the same as the
+> velocity sweep above: `T_param` must exceed 0.5, and a point whose fit
+> degenerates records `m_star` as NaN with a warning while still reporting
+> `t_star`. A single point at `a_list = b_list = [w]` reproduces
+> `Characteristic Time (mass vs v)` at that `w` exactly, which is asserted by
+> `tests/test_ab_grid_char_time.py`.
+
 ---
 
 ### Mass analysis
@@ -270,7 +316,7 @@ timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
 #### `Mass Analysis`
 Mass on each layer as a function of time.
 **Required:** `rg_param`, `ry_param`, `v_param`, `w_param`, `T_param`, `N_LIST`
-**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v).
+**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 **Output:** five CSV series under `mass_analysis_results/`, plus PNGs when
 `save_png` is true —
 `diffusive/`, `advective/`, `total/`, `advective_over_total/`,

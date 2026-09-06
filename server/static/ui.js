@@ -90,7 +90,7 @@ function hoursOf(seconds) {
 }
 
 // ------------------------------------------------------------- computations
-/* Grouped the way COMPUTATION_MENU.md groups them: 18 similar names in one flat
+/* Grouped the way COMPUTATION_MENU.md groups them: 19 similar names in one flat
  * list is hard to scan. Anything unmatched falls into "Other" rather than being
  * dropped, so a newly registered computation still appears. */
 const GROUPS = [

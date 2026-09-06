@@ -28,9 +28,11 @@ check("GET /health ok", r.status_code == 200 and r.json()["status"] == "ok",
 
 r = requests.get(f"{BASE}/computations")
 comps = r.json().get("computations", [])
-check("GET /computations returns 18", len(comps) == 18, f"got {len(comps)}")
+check("GET /computations returns 19", len(comps) == 19, f"got {len(comps)}")
 check("includes the new kernel",
       "Characteristic Time (mass vs v)" in comps)
+check("includes the (a, b) grid kernel",
+      "Characteristic Time (a,b grid)" in comps)
 
 print("== schema ==")
 r = requests.get(f"{BASE}/computations/Characteristic Time (mass vs v)")

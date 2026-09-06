@@ -21,6 +21,7 @@ for _p in (os.path.join(_ROOT, "server"),
 import estimate  # noqa: E402
 
 CT = "Characteristic Time (mass vs v)"
+AB = "Characteristic Time (a,b grid)"
 
 
 def test_steps_matches_the_solver():
@@ -99,6 +100,67 @@ def test_velocity_sweep_scales():
     s3 = three - estimate.STARTUP_SECONDS
     assert abs(s3 / s1 - 3.0) < 1e-9, f"expected 3x on the solve, got {s3/s1:.4f}"
     assert three < 3 * one, "startup should be paid once, not per velocity"
+
+
+def test_ab_grid_lanes_matches_the_kernel():
+    """estimate.ab_grid_lanes must equal launch._ab_grid_worker_count exactly.
+
+    Same duplication, same reason, same remedy as test_steps_matches_the_solver:
+    the API cannot import the solver, so the formula is copied and the copy is
+    asserted rather than trusted.
+    """
+    from launch_functions import launch
+
+    bad = []
+    for workers in (0, None, 1, 2, 3, 64):
+        for points in (1, 2, 6, 25, 400):
+            mine = estimate.ab_grid_lanes(workers, points)
+            theirs = launch._ab_grid_worker_count(workers, points)
+            if mine != theirs:
+                bad.append(f"workers={workers} points={points}: "
+                           f"estimate={mine} kernel={theirs}")
+    assert not bad, "ab_grid_lanes disagrees with the kernel:\n  " + \
+        "\n  ".join(bad)
+
+
+def test_ab_grid_costs_rounds_on_cpu_and_points_on_gpu():
+    """The grid's shape must move the estimate, and move it per device.
+
+    On the CPU the points run in parallel, so a 3x3 grid pinned to 3 workers
+    costs three rounds, not nine solves. On the GPU one cooperative kernel fills
+    the card, so all nine are sequential. Startup is removed from both sides
+    first: it is paid once either way, and folding it in would make this test
+    fail whenever STARTUP_SECONDS is retuned.
+    """
+    base = {"rg_param": 96, "ry_param": 96, "T_param": 1,
+            "a_list": [1, 10, 100], "b_list": [1, 10, 100], "workers": 3}
+
+    def solve_only(params, device):
+        return estimate.seconds(AB, params, device=device) - estimate.STARTUP_SECONDS
+
+    one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96, "T_param": 1,
+                                "device": "cpu"}) - estimate.STARTUP_SECONDS
+
+    cpu = solve_only(dict(base, device="cpu"), "cpu")
+    assert abs(cpu / one - 3.0) < 1e-9, \
+        f"9 points over 3 workers should cost 3 solves, got {cpu/one:.4f}"
+
+    gpu_one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96,
+                                    "T_param": 1, "device": "gpu"}) \
+        - estimate.STARTUP_SECONDS
+    gpu = solve_only(dict(base, device="gpu"), "gpu")
+    assert abs(gpu / gpu_one - 9.0) < 1e-9, \
+        f"the GPU runs all 9 points sequentially, got {gpu/gpu_one:.4f}"
+
+
+def test_ab_grid_rounds_up_a_ragged_last_round():
+    """5 points over 2 workers is 3 rounds, not 2.5."""
+    base = {"rg_param": 96, "ry_param": 96, "T_param": 1, "device": "cpu",
+            "a_list": [1, 10, 100, 1000, 10000], "b_list": [1], "workers": 2}
+    one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96, "T_param": 1,
+                                "device": "cpu"}) - estimate.STARTUP_SECONDS
+    five = estimate.seconds(AB, base) - estimate.STARTUP_SECONDS
+    assert abs(five / one - 3.0) < 1e-9, f"expected 3 rounds, got {five/one:.4f}"
 
 
 def test_unestimable_returns_none():

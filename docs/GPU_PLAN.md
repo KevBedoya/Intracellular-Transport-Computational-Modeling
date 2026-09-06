@@ -66,11 +66,25 @@ numbers rather than estimates.
 ### The tolerance was accepted, and the path is wired
 
 `~1e-14` was accepted in August 2026 in exchange for the speedup above. `device`
-is now a parameter on `Mass Analysis` and `Characteristic Time (mass vs v)`,
-defaulting to `cpu`, and reaches the browser form and the job API through the
-existing schema. `gpu` fails loudly on an unsupported configuration; `auto` falls
-back to the CPU and says why. An explicit `gpu` request that silently ran on the
-CPU would misreport what produced the numbers, which is why the two differ.
+is now a parameter on `Mass Analysis`, `Characteristic Time (mass vs v)` and
+`Characteristic Time (a,b grid)`, defaulting to `cpu`, and reaches the browser
+form and the job API through the existing schema. `gpu` fails loudly on an
+unsupported configuration; `auto` falls back to the CPU and says why. An explicit
+`gpu` request that silently ran on the CPU would misreport what produced the
+numbers, which is why the two differ.
+
+The `(a, b)` grid resolves the device once for the whole grid rather than per
+point, so a grid cannot end up half on each. At ~1e-14 the two devices agree far
+inside anything physical, but a mixed grid would still carry a discontinuity
+belonging to the hardware and not to the model — and it would be invisible in the
+output, which records one device per run.
+
+It also parallelises the two devices differently, and for the reason measured in
+this document. The CPU points run in separate processes, several at a time, since
+the solver is single-threaded. The GPU points run one at a time: a cooperative
+launch already occupies every SM, so concurrent points time-slice rather than
+scale — the same effect that turned a 6.6 hr solo estimate into a 22.5 hr actual
+across three concurrent jobs, and that `estimate.share_factor` models as 1/N.
 
 End-to-end through `collect_char_time_mass` at 32², T=0.8, comparing the two
 quantities that actually get reported:

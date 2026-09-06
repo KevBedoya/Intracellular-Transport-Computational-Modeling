@@ -27,7 +27,7 @@ application**. To build it yourself, jump to
 | | |
 |---|---|
 | [`server/docs/CONNECTING.md`](server/docs/CONNECTING.md) | Getting on the tailnet and reaching the compute server and its web UI |
-| [`server/docs/COMPUTATION_MENU.md`](server/docs/COMPUTATION_MENU.md) | All 18 computations: parameters, outputs, and what each costs |
+| [`server/docs/COMPUTATION_MENU.md`](server/docs/COMPUTATION_MENU.md) | All 19 computations: parameters, outputs, and what each costs |
 | [`server/docs/UI_PLAN.md`](server/docs/UI_PLAN.md) | Design of the browser front end |
 | [`docs/REPOSITORY_LAYOUT.md`](docs/REPOSITORY_LAYOUT.md) | How the repository is organised |
 | [`docs/COMPUTATIONAL_WORKFLOW.md`](docs/COMPUTATIONAL_WORKFLOW.md) | The numerical workflow |

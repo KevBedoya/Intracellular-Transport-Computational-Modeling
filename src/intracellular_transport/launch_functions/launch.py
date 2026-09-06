@@ -1,4 +1,4 @@
-from . import mfpt_comp, sup, ant, np, num, super, os, pd, datetime, fp
+from . import mfpt_comp, sup, ant, mp, np, num, super, os, pd, datetime, fp
 
 from computational_tools import struct_init
 from data_processing import data_process_functions as pro
@@ -1070,6 +1070,152 @@ def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
         mass_checkpoint, center_init_cond, m_init, n_init, checkpoint=cp)
 
 
+# The log-linear fit window behind t*, in dimensionless time. Fixed rather than
+# exposed as a parameter: a characteristic time in this project is *defined* as
+# the decay of log10(total mass) across these two points, so a kernel fitting a
+# different window would report a t* not comparable with any number already
+# published. Both characteristic-time kernels read the window from here, so the
+# two cannot silently drift apart.
+CHAR_TIME_FIT_X1 = 0.4
+CHAR_TIME_FIT_X2 = 0.5
+
+
+def _char_time_fit_indices(rg_param, ry_param, T_param, MA_collection_factor,
+                           relative_k):
+    """Sample indices into the mass timeseries for the two fit points.
+
+    Pre-flight and cheap: this runs before any solving, so a parameter set whose
+    fit window falls outside the requested T fails immediately instead of after
+    the full time-stepping loop -- which at 160x160 means days.
+
+    Because the window is fixed at CHAR_TIME_FIT_X1 / _X2, every
+    characteristic-time computation silently requires ``T_param`` to exceed
+    CHAR_TIME_FIT_X2; otherwise the fit would index past the end of a series
+    that only holds ``relative_k`` samples.
+
+    Note that ``compute_K`` is called here with the default domain_radius and D
+    rather than the run's own, matching what collect_char_time_mass has always
+    done. The two agree for the only values ever used (1.0 and 1.0); they would
+    not for any other, so both kernels share this one definition rather than
+    each growing its own.
+    """
+    t1_ = num.compute_K(rg_param, ry_param, CHAR_TIME_FIT_X1)
+    t1 = num.closest_multiple(t1_, MA_collection_factor) // MA_collection_factor
+
+    t2_ = num.compute_K(rg_param, ry_param, CHAR_TIME_FIT_X2)
+    t2 = num.closest_multiple(t2_, MA_collection_factor) // MA_collection_factor
+
+    if not (0 <= t1 < relative_k and 0 <= t2 < relative_k):
+        raise ValueError(
+            f"characteristic-time fit indices out of range: "
+            f"t1={t1}, t2={t2}, valid range [0, {relative_k}). "
+            f"The fit window is hard-coded at x1={CHAR_TIME_FIT_X1}, "
+            f"x2={CHAR_TIME_FIT_X2}, so T_param must exceed "
+            f"{CHAR_TIME_FIT_X2} (got T_param={T_param}).")
+    return t1, t2
+
+
+def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
+                     T_param, N_LIST, MA_collection_factor, relative_k, t1, t2,
+                     d_tube, domain_radius, D, mass_checkpoint,
+                     center_init_cond, m_init, n_init, device, label=""):
+    """One solve plus the log-linear fit that defines t*.
+
+    This is the characteristic-time kernel proper: everything done per parameter
+    point, with no plotting, no file writing and no knowledge of what is being
+    swept. ``collect_char_time_mass`` calls it once per velocity;
+    ``collect_ab_grid_char_time`` calls it once per (a, b) pair, several at a
+    time in separate processes. Keeping it in one place is what makes the two
+    kernels report the same t* for the same parameters, which is asserted by
+    tests/test_ab_grid_char_time.py.
+
+    ``label`` names this point in the degenerate-fit warning below, since the
+    caller knows what is being swept and this function does not.
+
+    Returns plain Python floats in a dict -- plain because the result has to
+    survive being pickled back from a worker process.
+    """
+    D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
+
+    # One checkpoint directory per point, since each is a separate solve;
+    # without a distinguishing tag a sweep would resume the wrong trajectory.
+    cp, series = _setup_checkpoint(
+        tag, relative_k,
+        rg_param=rg_param, ry_param=ry_param, a=a_param, b=b_param,
+        v=v_param, T=T_param, N_LIST=N_LIST, d_tube=d_tube,
+        domain_radius=domain_radius, D=D,
+        MA_collection_factor=MA_collection_factor, relative_k=relative_k,
+        center_init_cond=center_init_cond, m_init=m_init, n_init=n_init)
+    # Canonical slot order, matching the parameter order of
+    # comp_mass_analysis_respect_to_time: (DL, AL, ALoI, ALoT, TM).
+    # The GPU kernel writes these same indices, so the order here is a
+    # contract between the two devices, not a local naming choice --
+    # swapping slots 2 and 3 makes the two paths disagree on which series
+    # holds al/T and which holds al/D.
+    (MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
+     MA_ALoT_timeseries, MA_TM_timeseries) = series
+
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
+    _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
+                         v_param, T_param, N_LIST, D_LAYER, A_LAYER,
+                         MA_collection_factor, relative_k, d_tube,
+                         domain_radius, D, mass_checkpoint,
+                         center_init_cond, m_init, n_init, cp=cp)
+
+    y1 = np.log10(MA_TM_timeseries[t1])
+    y2 = np.log10(MA_TM_timeseries[t2])
+
+    m = (y2 - y1) / (CHAR_TIME_FIT_X2 - CHAR_TIME_FIT_X1)
+    b = y2 - m * CHAR_TIME_FIT_X2
+
+    # characteristic time
+    t_star = -b / m
+
+    # compute the mass corresponding to t_star, and then record
+    k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
+    k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
+
+    # Guard the k_star lookup.
+    # k_star is derived from the *fitted* t_star, so it cannot be validated
+    # before the solve.  A degenerate fit (t_star non-finite, non-positive,
+    # or large enough that 10 * t_star exceeds T_param) would index outside
+    # MA_TM_timeseries and raise a bare IndexError only after the entire
+    # time-stepping loop has finished -- discarding hours of computation for
+    # a one-line lookup.  Instead, record m_star as NaN and report loudly:
+    # t_star is unaffected and is still written to the CSV.
+    if (not np.isfinite(t_star)) or t_star <= 0 or not (0 <= k_star < relative_k):
+        print("*** WARNING: degenerate characteristic-time fit ***")
+        print(f"    point      = {label or tag}")
+        print(f"    t_star     = {t_star}")
+        print(f"    k_star     = {k_star}  (valid range [0, {relative_k}))")
+        print(f"    m_star requires 10 * t_star < T_param; "
+              f"here T_param={T_param} and 10 * t_star={10 * t_star}")
+        print("    recording m_star = NaN; t_star is still reported.")
+        m_star = np.nan
+    else:
+        m_star = MA_TM_timeseries[k_star]
+
+    # Record the fit itself, not just what it implies.
+    #
+    # The slope is the decay rate of log10(total mass) across the window and
+    # is a result in its own right -- it is what t* is derived from, and it
+    # varies with grid size in a way t* alone does not show. It used to be a
+    # local that went out of scope, which meant recovering it afterwards
+    # needed the mass timeseries, and that is not retained: for the GPU runs
+    # nothing is logged per step, so the slope was simply unrecoverable
+    # short of re-solving. The two window masses are kept too, since they
+    # are the entire input to the fit and cost two floats.
+    return {
+        "t_star": float(t_star),
+        "m_star": float(m_star),
+        "fit_slope": float(m),
+        "fit_intercept": float(b),
+        "total_mass_at_t1": float(MA_TM_timeseries[t1]),
+        "total_mass_at_t2": float(MA_TM_timeseries[t2]),
+    }
+
+
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
                            mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True,
                            device=DEVICE_CPU):
@@ -1081,121 +1227,22 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     b_param = w_param
     a_param = w_param
 
-    m_star_dict = {}
-    t_star_dict = {}
-    # The log-linear fit behind t*: slope, intercept, and the two masses it was
-    # fitted to. Reported alongside t* so the fit can be checked and reused.
-    slope_dict = {}
-    intercept_dict = {}
-    tm_x1_dict = {}
-    tm_x2_dict = {}
+    x1 = CHAR_TIME_FIT_X1
+    x2 = CHAR_TIME_FIT_X2
+    t1, t2 = _char_time_fit_indices(rg_param, ry_param, T_param,
+                                    MA_collection_factor, relative_k)
 
-    # adjacent time points for the log scale line computation
-    x1 = 0.4
-    x2 = 0.5
-
-    # convert the real time to discretized time
-    t1_ = num.compute_K(rg_param, ry_param, x1)
-    t1 = num.closest_multiple(t1_, MA_collection_factor) // MA_collection_factor
-
-    t2_ = num.compute_K(rg_param, ry_param, x2)
-    t2 = num.closest_multiple(t2_, MA_collection_factor) // MA_collection_factor
-
-    # Pre-flight bounds check (cheap, runs before any solving).
-    # t1 / t2 are the log-fit sample indices into MA_*_timeseries, which has
-    # relative_k entries.  Because x1 / x2 are fixed at 0.4 / 0.5 above, this
-    # function silently requires T_param > x2; otherwise the fit below would
-    # index past the end of the series.  Validating here means a bad parameter
-    # set fails immediately instead of after the full time-stepping loop.
-    if not (0 <= t1 < relative_k and 0 <= t2 < relative_k):
-        raise ValueError(
-            f"characteristic-time fit indices out of range: "
-            f"t1={t1}, t2={t2}, valid range [0, {relative_k}). "
-            f"The fit window is hard-coded at x1={x1}, x2={x2}, so T_param "
-            f"must exceed {x2} (got T_param={T_param}).")
-
+    # One fit per velocity, keyed by it, in the order the sweep was requested.
+    fits = {}
     for v_param in v_LIST:
+        fits[v_param] = _char_time_point(
+            f"char_time_v{v_param:g}", rg_param, ry_param, a_param, b_param,
+            v_param, T_param, N_LIST, MA_collection_factor, relative_k, t1, t2,
+            d_tube, domain_radius, D, mass_checkpoint, center_init_cond,
+            m_init, n_init, device, label=f"v = {v_param}")
 
-        D_LAYER, A_LAYER = sup.initialize_layers(rg_param, ry_param)
-
-        # One checkpoint directory per velocity, since each v is a separate
-        # solve; without the suffix a sweep would resume the wrong trajectory.
-        cp, series = _setup_checkpoint(
-            f"char_time_v{v_param:g}", relative_k,
-            rg_param=rg_param, ry_param=ry_param, a=a_param, b=b_param,
-            v=v_param, T=T_param, N_LIST=N_LIST, d_tube=d_tube,
-            domain_radius=domain_radius, D=D,
-            MA_collection_factor=MA_collection_factor, relative_k=relative_k,
-            center_init_cond=center_init_cond, m_init=m_init, n_init=n_init)
-        # Canonical slot order, matching the parameter order of
-        # comp_mass_analysis_respect_to_time: (DL, AL, ALoI, ALoT, TM).
-        # The GPU kernel writes these same indices, so the order here is a
-        # contract between the two devices, not a local naming choice --
-        # swapping slots 2 and 3 makes the two paths disagree on which series
-        # holds al/T and which holds al/D.
-        (MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
-         MA_ALoT_timeseries, MA_TM_timeseries) = series
-
-        _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
-
-        _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
-                             v_param, T_param, N_LIST, D_LAYER, A_LAYER,
-                             MA_collection_factor, relative_k, d_tube,
-                             domain_radius, D, mass_checkpoint,
-                             center_init_cond, m_init, n_init, cp=cp)
-
-        y1 = np.log10(MA_TM_timeseries[t1])
-        y2 = np.log10(MA_TM_timeseries[t2])
-
-        m = (y2 - y1) / (x2 - x1)
-        b = y2 - m*x2
-
-        # characteristic time
-        t_star = -b/m
-        t_star_dict[v_param] = t_star
-
-        # Record the fit itself, not just what it implies.
-        #
-        # The slope is the decay rate of log10(total mass) across the window and
-        # is a result in its own right -- it is what t* is derived from, and it
-        # varies with grid size in a way t* alone does not show. It used to be a
-        # local that went out of scope, which meant recovering it afterwards
-        # needed the mass timeseries, and that is not retained: for the GPU runs
-        # nothing is logged per step, so the slope was simply unrecoverable
-        # short of re-solving. The two window masses are kept too, since they
-        # are the entire input to the fit and cost two floats.
-        slope_dict[v_param] = m
-        intercept_dict[v_param] = b
-        tm_x1_dict[v_param] = MA_TM_timeseries[t1]
-        tm_x2_dict[v_param] = MA_TM_timeseries[t2]
-
-        # compute the mass corresponding to t_star, and then record
-        k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
-        k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
-
-        # Guard the k_star lookup.
-        # k_star is derived from the *fitted* t_star, so it cannot be validated
-        # before the solve.  A degenerate fit (t_star non-finite, non-positive,
-        # or large enough that 10 * t_star exceeds T_param) would index outside
-        # MA_TM_timeseries and raise a bare IndexError only after the entire
-        # time-stepping loop has finished -- discarding hours of computation for
-        # a one-line lookup.  Instead, record m_star as NaN and report loudly:
-        # t_star is unaffected and is still written to the CSV.
-        if (not np.isfinite(t_star)) or t_star <= 0 or not (0 <= k_star < relative_k):
-            print("*** WARNING: degenerate characteristic-time fit ***")
-            print(f"    v          = {v_param}")
-            print(f"    t_star     = {t_star}")
-            print(f"    k_star     = {k_star}  (valid range [0, {relative_k}))")
-            print(f"    m_star requires 10 * t_star < T_param; "
-                  f"here T_param={T_param} and 10 * t_star={10 * t_star}")
-            print("    recording m_star = NaN; t_star is still reported.")
-            m_star = np.nan
-        else:
-            m_star = MA_TM_timeseries[k_star]
-        m_star_dict[v_param] = m_star
-
-    v_axis = list(m_star_dict.keys())
-    m_axis = list(m_star_dict.values())
+    v_axis = list(fits.keys())
+    m_axis = [fits[v_param]["m_star"] for v_param in v_axis]
 
     plt.scatter(v_axis, m_axis)
     plt.xscale('log')
@@ -1215,14 +1262,14 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     # reading this file by position keeps working; the fit columns are appended.
     df = pd.DataFrame({
         'v': v_axis,
-        't_star': [t_star_dict[v_param] for v_param in v_axis],
+        't_star': [fits[v_param]["t_star"] for v_param in v_axis],
         'm_star': m_axis,
-        'fit_slope': [slope_dict[v_param] for v_param in v_axis],
-        'fit_intercept': [intercept_dict[v_param] for v_param in v_axis],
+        'fit_slope': [fits[v_param]["fit_slope"] for v_param in v_axis],
+        'fit_intercept': [fits[v_param]["fit_intercept"] for v_param in v_axis],
         'fit_window_t1': [x1] * len(v_axis),
         'fit_window_t2': [x2] * len(v_axis),
-        'total_mass_at_t1': [tm_x1_dict[v_param] for v_param in v_axis],
-        'total_mass_at_t2': [tm_x2_dict[v_param] for v_param in v_axis],
+        'total_mass_at_t1': [fits[v_param]["total_mass_at_t1"] for v_param in v_axis],
+        'total_mass_at_t2': [fits[v_param]["total_mass_at_t2"] for v_param in v_axis],
     })
     df.to_csv(data_location, index=False)
 
@@ -1233,6 +1280,269 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
         plt.show()
 
 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+# v==================================== Characteristic time over an (a, b) grid ====================================v
+#
+# WHY THE (a, b) POINTS RUN AS CONCURRENT PROCESSES ON THE CPU
+#
+# Every (a, b) pair is an independent solve: the pairs share no state, and each
+# one only reads the parameters it was given and returns six floats. So the grid
+# parallelises perfectly, and the reasons it is worth doing are the same three
+# that made the microtubule sweep in main.py concurrent:
+#
+# 1. The solver is single-threaded. comp_mass_analysis_respect_to_time is an
+#    @njit function with a serial time loop, measured at 0.99 cores busy. A
+#    sequential 4x4 grid therefore leaves eleven of this machine's twelve cores
+#    idle for the whole run.
+#
+# 2. The points cost the same. K depends only on the grid and T, never on a or
+#    b, so every point runs an identical number of timesteps and they finish
+#    together. There is no straggler to wait on.
+#
+# 3. Processes, not threads. numba compiles these kernels without nogil, so
+#    threads would serialise on the GIL and buy nothing. Separate processes also
+#    give each point its own matplotlib state, which is what stops one point's
+#    figure from accumulating another's (the bug described in main.py).
+#
+# The GPU is the opposite case and is handled the opposite way: see the
+# device-resolution block in collect_ab_grid_char_time.
+
+
+def _ab_grid_worker_count(requested, n_points):
+    """How many (a, b) points to solve at once on the CPU.
+
+    Never more than there are points, and never more than one per core with one
+    left over for the parent process and the OS. ``requested`` pins it; the job
+    worker already runs up to four jobs at a time, so a grid submitted into a
+    busy queue wants pinning rather than the default.
+    """
+    if requested and int(requested) > 0:
+        return max(1, min(int(requested), n_points))
+    return max(1, min(n_points, (os.cpu_count() or 2) - 1))
+
+
+def _ab_grid_char_time_worker(job):
+    """Solve one (a, b) point. Runs in its own process under the pool below.
+
+    Must stay a module-level function taking a single picklable argument: the
+    "spawn" start method (the only one on Windows) pickles the callable by
+    module and qualified name and re-imports it in the child.
+    """
+    import time as _time
+
+    a_param, b_param, cfg = job
+
+    start = _time.perf_counter()
+    row = _char_time_point(
+        f"ab_grid_char_time_a{a_param:g}_b{b_param:g}",
+        a_param=a_param, b_param=b_param,
+        label=f"a = {a_param}, b = {b_param}", **cfg)
+    row["a"] = a_param
+    row["b"] = b_param
+    row["seconds"] = _time.perf_counter() - start
+    print(f"[a={a_param:g} b={b_param:g}] t* = {row['t_star']:.6g} "
+          f"in {row['seconds']/60:.2f} min", flush=True)
+    return row
+
+
+def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_param,
+                              N_LIST, MA_collection_factor=5, domain_radius=1.0,
+                              D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
+                              center_init_cond=True, m_init=0, n_init=0,
+                              show_plt=False, device=DEVICE_CPU, workers=0):
+    """Characteristic time t* over the full grid of (a, b) switch rates.
+
+    Where ``collect_char_time_mass`` sweeps velocity at a single switch rate
+    (a = b = w), this sweeps the two switch rates independently at a single
+    velocity: ``a_list`` supplies the rate onto the diffusive layer and
+    ``b_list`` the rate onto the advective layer, and every pair in the cartesian
+    product ``a_list x b_list`` is solved. ``v_param`` is one value here, not a
+    list -- the grid is already two-dimensional, and a third axis would multiply
+    an already expensive job by the length of a velocity list.
+
+    Each point is the same solve-and-fit as the velocity sweep, run through the
+    shared ``_char_time_point`` kernel, so a 1x1 grid at (w, w) reproduces
+    ``collect_char_time_mass`` for that velocity exactly.
+
+    Outputs, under ``data_output/ab_grid_char_time/<timestamp>/``:
+      * ``ab_grid_char_t_data.csv``  -- one row per (a, b), with t*, m* and the
+        fit each was derived from
+      * ``ab_grid_char_t_heatmap.png`` -- t* over the grid
+
+    Returns the paths it wrote, so a caller that is not reading the output tree
+    still learns where the results went.
+    """
+    a_list = [float(a) for a in a_list]
+    b_list = [float(b) for b in b_list]
+    if not a_list or not b_list:
+        raise ValueError(
+            f"a_list and b_list must each hold at least one switch rate "
+            f"(got {len(a_list)} and {len(b_list)})")
+
+    K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+    print("deltaT = ", num.compute_dT(rg_param, ry_param))
+    relative_k = int(np.floor(K / MA_collection_factor))
+
+    x1 = CHAR_TIME_FIT_X1
+    x2 = CHAR_TIME_FIT_X2
+    t1, t2 = _char_time_fit_indices(rg_param, ry_param, T_param,
+                                    MA_collection_factor, relative_k)
+
+    # Normalised once, here rather than per point: N_LIST crosses a process
+    # boundary on the CPU path and goes to the device on the GPU one, and the
+    # two must be given the same thing for their results to be comparable.
+    N_LIST = np.asarray(N_LIST, dtype=np.int64)
+
+    _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
+
+    points = [(a, b) for a in a_list for b in b_list]
+
+    # --- device resolution, once for the whole grid ------------------------
+    # Decided up front rather than per point so a grid cannot end up half on one
+    # device and half on the other -- the two agree only to ~1e-14, so a mixed
+    # grid would carry a discontinuity that belongs to the hardware and not to
+    # the physics.
+    dev = (device or DEVICE_CPU).strip().lower()
+    if dev not in DEVICES:
+        raise ValueError(
+            f"unknown device {device!r}; expected one of {', '.join(DEVICES)}")
+
+    on_gpu = False
+    if dev in (DEVICE_GPU, DEVICE_AUTO):
+        from gpu import driver as gpu_driver
+
+        try:
+            gpu_driver.check_supported(rg_param, ry_param, d_tube,
+                                       center_init_cond)
+        except gpu_driver.GpuUnsupported as exc:
+            if dev == DEVICE_GPU:
+                raise
+            print(f"device=auto: GPU unavailable, using CPU instead ({exc})")
+            dev = DEVICE_CPU
+        else:
+            on_gpu = True
+
+    cfg = dict(
+        rg_param=rg_param, ry_param=ry_param, v_param=v_param, T_param=T_param,
+        N_LIST=N_LIST, MA_collection_factor=MA_collection_factor,
+        relative_k=relative_k, t1=t1, t2=t2, d_tube=d_tube,
+        domain_radius=domain_radius, D=D, mass_checkpoint=mass_checkpoint,
+        center_init_cond=center_init_cond, m_init=m_init, n_init=n_init,
+        device=DEVICE_GPU if on_gpu else DEVICE_CPU)
+
+    print("=== characteristic time over an (a, b) grid ===")
+    print(f"grid          : {rg_param}x{ry_param}")
+    print(f"a list        : {a_list}")
+    print(f"b list        : {b_list}")
+    print(f"v             : {v_param}")
+    print(f"T             : {T_param}")
+    print(f"(a, b) points : {len(points)}")
+
+    if on_gpu:
+        # Sequential, deliberately. The GPU solve is one cooperative kernel that
+        # occupies every SM on the card for the whole run, so a second
+        # concurrent point does not get its own hardware -- it time-slices with
+        # the first. That is measured, not assumed: three concurrent GPU jobs
+        # turned a 6.6 hr solo estimate into a 22.5 hr actual, which is where
+        # estimate.share_factor's 1/N comes from. Running the points one after
+        # another is therefore both the fastest option and the one whose
+        # progress output is legible.
+        print("execution     : GPU, one point at a time "
+              "(a cooperative kernel already fills the card)")
+        print(flush=True)
+        rows = [_ab_grid_char_time_worker((a, b, cfg)) for a, b in points]
+    else:
+        n_workers = _ab_grid_worker_count(workers, len(points))
+        print(f"execution     : CPU, {n_workers} point(s) at a time")
+        print(flush=True)
+        jobs = [(a, b, cfg) for a, b in points]
+        if n_workers == 1:
+            # In-process: a pool of one buys nothing and costs a numba compile
+            # in the child plus an opaque traceback if a point raises.
+            rows = [_ab_grid_char_time_worker(job) for job in jobs]
+        else:
+            # "spawn" is the only start method on Windows and keeps each
+            # worker's numba and matplotlib state fully isolated.
+            ctx = mp.get_context("spawn")
+            with ctx.Pool(processes=n_workers) as pool:
+                rows = pool.map(_ab_grid_char_time_worker, jobs)
+
+    # --- tabulate ----------------------------------------------------------
+    output_directory = _create_unique_timestamp_dir(fp.ab_grid_char_time_output)
+
+    data_location = os.path.join(output_directory, 'ab_grid_char_t_data.csv')
+    # a, b, v, t_star and m_star lead; the fit that produced them follows, in
+    # the same column names collect_char_time_mass writes, so the two CSVs can
+    # be concatenated.
+    df = pd.DataFrame({
+        'a': [r["a"] for r in rows],
+        'b': [r["b"] for r in rows],
+        'v': [v_param] * len(rows),
+        't_star': [r["t_star"] for r in rows],
+        'm_star': [r["m_star"] for r in rows],
+        'fit_slope': [r["fit_slope"] for r in rows],
+        'fit_intercept': [r["fit_intercept"] for r in rows],
+        'fit_window_t1': [x1] * len(rows),
+        'fit_window_t2': [x2] * len(rows),
+        'total_mass_at_t1': [r["total_mass_at_t1"] for r in rows],
+        'total_mass_at_t2': [r["total_mass_at_t2"] for r in rows],
+    })
+    df.to_csv(data_location, index=False)
+
+    # --- heatmap -----------------------------------------------------------
+    # Rows are a, columns are b, in the order they were supplied. Drawn on its
+    # own Figure and closed afterwards rather than through the pyplot state
+    # machine, so two grids run back to back in one process do not share axes.
+    t_star_grid = np.array([r["t_star"] for r in rows],
+                           dtype=np.float64).reshape(len(a_list), len(b_list))
+
+    fig, ax = plt.subplots(figsize=(max(4.0, 1.1 * len(b_list) + 2.5),
+                                    max(3.5, 1.0 * len(a_list) + 2.0)))
+    image = ax.imshow(t_star_grid, origin='lower', aspect='auto', cmap='viridis')
+    ax.set_xticks(range(len(b_list)))
+    ax.set_xticklabels([f"{b:g}" for b in b_list])
+    ax.set_yticks(range(len(a_list)))
+    ax.set_yticklabels([f"{a:g}" for a in a_list])
+    ax.set_xlabel(r"($b$) switch rate onto the advective layer")
+    ax.set_ylabel(r"($a$) switch rate onto the diffusive layer")
+    ax.set_title(r"$t^*(a, b)$, " + f"N={len(N_LIST)}, " + f"v={v_param:g}, "
+                 + f"grid={rg_param}x{ry_param}")
+    fig.colorbar(image, ax=ax, label=r"characteristic time $t^*$")
+
+    # Print the value in each cell on a grid small enough to read it. On a
+    # coarse grid -- which is what these are, being one full solve per cell --
+    # the number is the result and the colour is only the summary.
+    #
+    # Text colour follows the cell rather than being fixed: viridis runs from
+    # dark blue to bright yellow, so a single colour is illegible over half the
+    # range whichever one is chosen.
+    if len(a_list) * len(b_list) <= 64:
+        finite = t_star_grid[np.isfinite(t_star_grid)]
+        midpoint = (finite.min() + finite.max()) / 2 if finite.size else 0.0
+        for i in range(len(a_list)):
+            for j in range(len(b_list)):
+                value = t_star_grid[i, j]
+                ax.text(j, i, "--" if not np.isfinite(value) else f"{value:.4g}",
+                        ha='center', va='center', fontsize=7,
+                        color='k' if np.isfinite(value) and value > midpoint
+                        else 'w')
+
+    plot_location = os.path.join(output_directory, 'ab_grid_char_t_heatmap.png')
+    fig.savefig(plot_location, bbox_inches='tight')
+
+    print(f'(a, b) grid characteristic-time data saved to {data_location}')
+    print(f'(a, b) grid characteristic-time heatmap saved to {plot_location}')
+
+    if show_plt:
+        plt.show()
+    plt.close(fig)
+
+    return {"output_dir": output_directory, "csv": data_location,
+            "plot": plot_location, "points": len(rows),
+            "device": DEVICE_GPU if on_gpu else DEVICE_CPU}
+# ^==================================== Characteristic time over an (a, b) grid ====================================^
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 

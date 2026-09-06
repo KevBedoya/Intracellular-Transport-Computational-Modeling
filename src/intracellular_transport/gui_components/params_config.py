@@ -294,6 +294,32 @@ PARAMETER_SCHEMAS = {
         "approach": ["time-dependent"]
     },
 
+    "Characteristic Time (a,b grid)": {
+        "required": [
+            ("rg_param", ""),
+            ("ry_param", ""),
+            ("a_list", ""),
+            ("b_list", ""),
+            ("v_param", ""),
+            ("T_param", ""),
+            ("N_LIST", ""),
+        ],
+        "default": [
+            ("MA_collection_factor", int(5)),
+            ("domain_radius", 1.0),
+            ("D", 1.0),
+            ("mass_checkpoint", int(1e6)),
+            ("d_tube", 0.0),
+            ("center_init_cond", True),
+            ("m_init", 0),
+            ("n_init", 0),
+            ("show_plt", False),
+            ("device", "cpu"),
+            ("workers", 0)
+        ],
+        "approach": ["time-dependent"]
+    },
+
     "Jrr Mass Sum Over Time": {
         "required": [
             ("rg_param", ""),
@@ -424,6 +450,15 @@ PARAMETER_HINTS = {
     "approach": "approach: (1) For mass dependent data collection, (2) For time dependent data collection. (int)",
     "v_LIST": "v_LIST: Advective velocities to sweep. Provide as a list of floats: []",
     "w_LIST": "w_LIST: Switch rates (a=b) to sweep. Provide as a list of floats: []",
+    "a_list": ("a_list: Switch rates onto the diffusive layer (a) to sweep. "
+               "Every pair in a_list x b_list is solved. Provide as a list of "
+               "floats: []"),
+    "b_list": ("b_list: Switch rates onto the advective layer (b) to sweep. "
+               "Every pair in a_list x b_list is solved. Provide as a list of "
+               "floats: []"),
+    "workers": ("workers: How many (a, b) points to solve concurrently on the "
+                "CPU. 0 (default) uses one per core, less one. Ignored on the "
+                "GPU, where a single solve already fills the card. (int)"),
     "grid_list": "grid_list: Square grid sizes to sweep. Provide as a list of ints: []",
     "N_amount": "N_amount: Number of evenly spaced microtubules. (int)",
     "checkpoint": "checkpoint: Time- or mass-stamp at which data is collected. (float)",

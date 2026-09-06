@@ -47,6 +47,11 @@ mass_analysis_advective_over_initial = general_output / "mass_analysis_results/a
 
 # Characteristic time analysis results
 char_time_analysis_output = general_output / "char_time_analysis"
+# Kept separate from char_time_analysis rather than sharing it: the (a, b) grid
+# writes a differently-shaped CSV (one row per switch-rate pair, not per
+# velocity), and anything globbing the velocity-sweep directory would otherwise
+# pick these up and mis-read them.
+ab_grid_char_time_output = general_output / "ab_grid_char_time"
 
 rect_logs = general_output / "output_logs"
 # styles_location = BASE_DIR / "gui_components/styles/style.qss"

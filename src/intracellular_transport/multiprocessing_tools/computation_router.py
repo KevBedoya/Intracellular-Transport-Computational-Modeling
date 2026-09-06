@@ -21,6 +21,7 @@ COMPUTATION_FUNCTIONS = {
     "Mass Analysis": launch.collect_mass_analysis,
 
     "Characteristic Time (mass vs v)": launch.collect_char_time_mass,
+    "Characteristic Time (a,b grid)": launch.collect_ab_grid_char_time,
     "Jrr Mass Sum Over Time": launch.collect_Jrr_mass_sum_over_time,
     "BC Parameter Dependence (w sweep)": launch.collect_BC_param_dependence,
     "BC Parameter Dependence (grid-size sweep)": launch.collect_BC_param_dependence_grid_size,
@@ -83,6 +84,8 @@ _REQUIRED_PARAM_TYPES = {
     "grid_list": list,
     "v_LIST": list,
     "w_LIST": list,
+    "a_list": list,
+    "b_list": list,
     "checkpoint_collect_container": list,
 }
 
@@ -97,7 +100,8 @@ _OPTIONAL_TYPE_OVERRIDES = {
 # Computations whose log-fit window is hard-coded at x1=0.4, x2=0.5, so T must
 # exceed 0.5 or the pre-flight check rejects the run.
 _FIT_WINDOW_MIN_T = 0.5
-_FIT_WINDOW_COMPUTATIONS = {"Characteristic Time (mass vs v)"}
+_FIT_WINDOW_COMPUTATIONS = {"Characteristic Time (mass vs v)",
+                            "Characteristic Time (a,b grid)"}
 
 
 def _schema_for(computation_name):
@@ -212,6 +216,17 @@ def validate_params(computation_name, params):
             errors["N_LIST"] = "positions must be distinct"
         elif ry is not None and (min(nlist) < 0 or max(nlist) > ry - 1):
             errors["N_LIST"] = f"positions must lie in [0, {ry - 1}] for ry_param={ry}"
+
+    # The (a, b) grid solves the cartesian product of these two, so an empty one
+    # would produce no points at all -- and a negative switch rate is not a
+    # slower switch, it is a source term the scheme was never derived for.
+    for key in ("a_list", "b_list"):
+        v = clean.get(key)
+        if isinstance(v, list):
+            if not v:
+                errors[key] = "must contain at least one switch rate"
+            elif any(x < 0 for x in v):
+                errors[key] = "switch rates must be non-negative"
 
     if computation_name in _FIT_WINDOW_COMPUTATIONS:
         t = clean.get("T_param")
