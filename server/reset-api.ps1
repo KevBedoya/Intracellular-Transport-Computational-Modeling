@@ -50,6 +50,12 @@
     API port. Used to find the running process and to health-check the new one.
 
 .NOTES
+    MUST RUN ELEVATED. serve.ps1 registers the task -LogonType S4U, so the API
+    runs in session 0 while an interactive shell is in session 1 or 2, and
+    Windows refuses cross-session termination without administrator rights --
+    even though both run as the same user. From a normal prompt this script
+    stops before changing anything and prints the elevated command to use.
+
     -ExecutionPolicy Bypass is required unless you have already run
     `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. It applies to this
     invocation only and changes no system setting.
@@ -101,6 +107,55 @@ function Get-HeadSha {
     (& git -C $ProjectDir rev-parse --short HEAD 2>$null)
 }
 
+function Test-Elevated {
+    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+}
+
+function Assert-CanStop($targetPid) {
+    <#
+      Fail before killing anything if this shell cannot kill it.
+
+      serve.ps1 registers the task -LogonType S4U, which runs it in session 0 --
+      the services session -- while an interactive shell is in session 1 or 2.
+      Windows does not let a non-elevated process terminate one in another
+      session even when both run as the same user, so Stop-Process comes back
+      "Access is denied" from a normal prompt. That is the note in serve.ps1
+      about a later -Stop needing the same rights the servers were started with.
+
+      Checked here rather than left to fail, because the failure lands *after*
+      the git report and reads as a raw .NET error, which looks like a bug in
+      this script rather than a missing privilege.
+    #>
+    $target = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+    if (-not $target) { return }
+    if (Test-Elevated) { return }
+
+    $mySession = (Get-Process -Id $PID).SessionId
+    if ($target.SessionId -eq $mySession) { return }
+
+    Write-Host ''
+    Write-Host "Cannot stop pid $targetPid from this shell." -ForegroundColor Red
+    Write-Host ("  api  session {0} (started by scheduled task, -LogonType S4U)" -f $target.SessionId)
+    Write-Host ("  this session {0}, not elevated" -f $mySession)
+    Write-Host ''
+    Write-Host 'Windows refuses cross-session termination without administrator'
+    Write-Host 'rights, even for your own processes. Re-run from an elevated'
+    Write-Host 'PowerShell (right-click > Run as administrator):'
+    Write-Host ''
+    $relaunch = "powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($Pull)  { $relaunch += ' -Pull' }
+    if ($Force) { $relaunch += ' -Force' }
+    Write-Host "    $relaunch" -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host 'Or from here, which raises a UAC prompt in a new window:'
+    Write-Host ''
+    Write-Host "    Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','$PSCommandPath'" -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host 'Nothing has been changed; the API is still running.'
+    exit 1
+}
+
 # ------------------------------------------------------------------ preflight
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $task) {
@@ -148,6 +203,7 @@ if ($behind -and [int]$behind -gt 0) {
 $listener = Get-ApiListener
 if ($listener) {
     $oldPid = [int]$listener.OwningProcess
+    Assert-CanStop $oldPid
     Write-Host "stopping api pid $oldPid ..."
     Stop-Process -Id $oldPid -Force
 } else {
