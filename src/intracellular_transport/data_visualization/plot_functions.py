@@ -311,7 +311,7 @@ def plot_dense_v_rad(y_lab, data_filepath, v, w, N, rings, rays, fixed_angle, ch
     plt.close()
 
 
-def plot_mass_analysis(data_filepath, v, w, N, T, rings, rays, mass_type, file_name_mass_type, file_path, save_png=True, show_plt=True):
+def plot_mass_analysis(data_filepath, v, a, b, N, T, rings, rays, mass_type, file_name_mass_type, file_path, save_png=True, show_plt=True):
 
     data = pd.read_csv(data_filepath)
 
@@ -329,7 +329,10 @@ def plot_mass_analysis(data_filepath, v, w, N, T, rings, rays, mass_type, file_n
     plt.ylabel("(m) Mass")
     plt.yscale('log')
 
-    title = f" Mass ({mass_type}) v. Time   W={w:.2e}   V={v}   N={len(N)}  Domain={rings}x{rays}"
+    # Equal switch rates keep reading as a single W, as every earlier figure did.
+    rates = f"W={a:.2e}" if a == b else f"A={a:.2e}   B={b:.2e}"
+
+    title = f" Mass ({mass_type}) v. Time   {rates}   V={v}   N={len(N)}  Domain={rings}x{rays}"
 
     plt.title(title)
     # plt.legend()

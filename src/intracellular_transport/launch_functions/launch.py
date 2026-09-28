@@ -818,7 +818,7 @@ def launch_super_comp_I(rg_param, ry_param, v_param, w_param, T_param, N_LIST, d
 
     # Diffusive mass analysis
     MA_results = pro.process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,
-                                        MA_ALoI_timeseries, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+                                        MA_ALoI_timeseries, v_param, w_param, w_param, N_LIST, T_param, rg_param, ry_param,
                                         save_png, show_plt, MA_collection_factor, domain_radius, D)
     print("\n\n")
     # Processing results for Phi v. Theta
@@ -870,12 +870,20 @@ def output_time_until_mass_depletion(rg_param, ry_param, N_LIST, v_param, w_para
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # (****) (****)
-def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST, MA_collection_factor=5,
+def collect_mass_analysis(rg_param, ry_param, v_param, a_param, b_param, T_param, N_LIST, MA_collection_factor=5,
                           domain_radius=1.0, D=1.0,
                           mass_checkpoint=10 ** 6, d_tube=0.0, MA_collection_factor_limit=10 ** 3, save_png=True,
                           show_plt=False,
                           center_init_cond=True, m_init=0, n_init=0,
                           device=DEVICE_CPU):
+    """Mass on each layer over time, for one (a, b) pair.
+
+    ``a_param`` is the switch rate onto the diffusive layer and ``b_param`` the
+    rate onto the advective layer, matching the naming the solver and the
+    (a, b) grid kernel already use. Passing the same value for both reproduces
+    what this function did when it took a single ``w_param``, including the
+    names of the files it writes.
+    """
 
     if len(N_LIST) > ry_param:
         raise IndexError(
@@ -913,13 +921,6 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
     series = [MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
               MA_ALoT_timeseries, MA_TM_timeseries]
 
-    # delta_R = num.compute_dRad(rg_param)
-    # delta_theta = num.compute_dThe(ry_param)
-    # fixed_ring_seg = int(np.floor(rg_param * 0.5))
-    b_param = w_param
-    # a_param = b_param/(delta_R * delta_theta * (fixed_ring_seg + 1))
-    a_param = w_param
-
     _validate_off_center_ic(center_init_cond, m_init, n_init, rg_param, ry_param)
 
     _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
@@ -930,7 +931,7 @@ def collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST,
 
     return pro.process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,
                                   MA_ALoI_timeseries,
-                                  v_param, w_param, N_LIST, T_param, rg_param, ry_param, save_png, show_plt, MA_collection_factor, domain_radius, D)
+                                  v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param, save_png, show_plt, MA_collection_factor, domain_radius, D)
 
 
 # (****) Create a timestamped output subdirectory that never overwrites an existing one (****)

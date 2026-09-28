@@ -253,7 +253,8 @@ PARAMETER_SCHEMAS = {
             ("rg_param", ""),
             ("ry_param", ""),
             ("v_param", ""),
-            ("w_param", ""),
+            ("a_param", ""),
+            ("b_param", ""),
             ("T_param", ""),
             ("N_LIST", ""),
         ],
@@ -422,6 +423,10 @@ PARAMETER_HINTS = {
     "rg_param": "rg_param: Number of radial rings in domain (int)",
     "ry_param": "ry_param: Number of angular rays in domain (int)",
     "w_param": "w_param: Mutual switch-rate between DL and AL (float)",
+    "a_param": ("a_param: Switch rate onto the diffusive layer (a). Set equal "
+                "to b_param for the mutual rate w. (float)"),
+    "b_param": ("b_param: Switch rate onto the advective layer (b). Set equal "
+                "to a_param for the mutual rate w. (float)"),
     "v_param": "v_param: Particle velocity across AL (float)",
     "T_param": "T_param: Solution time (dimensionless units) (float)",
     "N_LIST": "N_LIST: Angular index positions of microtubules in domain. Provide as list of ints: []",

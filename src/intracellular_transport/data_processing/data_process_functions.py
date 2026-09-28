@@ -152,11 +152,24 @@ def process_Jrr_sum_results(Jrr_sum_timeseries, v_param, w_param, N_LIST, rg_par
     return output_location_list, peak_time
 
 
+def switch_rate_tag(a_param, b_param):
+    """Filename fragment naming the two switch rates.
+
+    Equal rates keep the ``w=<rate>`` spelling every mass-analysis file used
+    before the two could be set separately, so results produced under the old
+    single-w signature and under the new one sit in the same namespace. The
+    rates are only spelled out individually when they actually differ.
+    """
+    return f"w={a_param}" if a_param == b_param else f"a={a_param}_b={b_param}"
+
+
 def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_ALoT_timeseries,
-                       MA_ALoI_timeseries, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+                       MA_ALoI_timeseries, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                        save_png, show_plt, mass_collection_factor, domain_radius, D):
 
     output_location_list = []
+
+    w_tag = switch_rate_tag(a_param, b_param)
 
     dt = num.compute_dT(rg_param, ry_param, domain_radius, D)
 
@@ -166,7 +179,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     timestamp = prints.return_timestamp()
     data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_diffusive, timestamp))
 
-    filename = f"MA_DL_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    filename = f"MA_DL_v={v_param}_{w_tag}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
     output_location = os.path.join(data_filepath, filename)
 
     data_dict = {
@@ -177,7 +190,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     df = pd.DataFrame(data_dict)
 
     df.to_csv(output_location, index=False)
-    plt.plot_mass_analysis(output_location, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+    plt.plot_mass_analysis(output_location, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                            "DL", "DL", data_filepath, save_png, show_plt)
     print("\n")
     output_location_list.append(output_location)
@@ -185,7 +198,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     # Advective mass analysis
     timestamp = prints.return_timestamp()
     data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_advective, timestamp))
-    filename = f"MA_AL_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    filename = f"MA_AL_v={v_param}_{w_tag}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
     output_location = os.path.join(data_filepath, filename)
 
     data_dict = {
@@ -196,7 +209,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     df = pd.DataFrame(data_dict)
 
     df.to_csv(output_location, index=False)
-    plt.plot_mass_analysis(output_location, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+    plt.plot_mass_analysis(output_location, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                            "AL", "AL", data_filepath, save_png, show_plt)
     print("\n")
     output_location_list.append(output_location)
@@ -204,7 +217,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     # Total mass analysis
     timestamp = prints.return_timestamp()
     data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_total, timestamp))
-    filename = f"MA_total_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    filename = f"MA_total_v={v_param}_{w_tag}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
     output_location = os.path.join(data_filepath, filename)
 
     data_dict = {
@@ -215,7 +228,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     df = pd.DataFrame(data_dict)
 
     df.to_csv(output_location, index=False)
-    plt.plot_mass_analysis(output_location, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+    plt.plot_mass_analysis(output_location, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                            "Total", "Total", data_filepath, save_png, show_plt)
     print("\n")
     output_location_list.append(output_location)
@@ -223,7 +236,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     # Advective/running total mass analysis
     timestamp = prints.return_timestamp()
     data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_advective_over_total, timestamp))
-    filename = f"MA_AL_running_total_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    filename = f"MA_AL_running_total_v={v_param}_{w_tag}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
     output_location = os.path.join(data_filepath, filename)
 
     data_dict = {
@@ -234,7 +247,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     df = pd.DataFrame(data_dict)
 
     df.to_csv(output_location, index=False)
-    plt.plot_mass_analysis(output_location, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+    plt.plot_mass_analysis(output_location, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                            "AL/running total", "Al_running_total", data_filepath, save_png, show_plt)
     print("\n")
     output_location_list.append(output_location)
@@ -242,7 +255,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     # Advective/initial total mass analysis
     timestamp = prints.return_timestamp()
     data_filepath = os.path.abspath(tb.create_directory(fp.mass_analysis_advective_over_initial, timestamp))
-    filename = f"MA_AL_initial_total_v={v_param}_w={w_param}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
+    filename = f"MA_AL_initial_total_v={v_param}_{w_tag}_N={len(N_LIST)}_Domain={rg_param}x{ry_param}.csv"
     output_location = os.path.join(data_filepath, filename)
 
     data_dict = {
@@ -253,7 +266,7 @@ def process_MA_results(MA_DL_timeseries, MA_AL_timeseries, MA_TM_timeseries, MA_
     df = pd.DataFrame(data_dict)
 
     df.to_csv(output_location, index=False)
-    plt.plot_mass_analysis(output_location, v_param, w_param, N_LIST, T_param, rg_param, ry_param,
+    plt.plot_mass_analysis(output_location, v_param, a_param, b_param, N_LIST, T_param, rg_param, ry_param,
                            "AL/initial total", "AL_initial_total", data_filepath, save_png, show_plt)
     print("\n")
     output_location_list.append(output_location)

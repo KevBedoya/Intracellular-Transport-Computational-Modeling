@@ -176,6 +176,7 @@ are repeated in its entry below.
 | `N_LIST` | list[int] | Microtubule angular positions, each in `[0, ry_param-1]`. E.g. `[0,4,8,12]` for 4 evenly spaced tubes |
 | `v_param` | float | Particle velocity along the advective layer. Negative is inward |
 | `w_param` | float | Mutual switch rate between diffusive and advective layers (sets `a = b = w`) |
+| `a_param` / `b_param` | float | The two switch rates set separately: `a` onto the diffusive layer, `b` onto the advective layer. Taken instead of `w_param` by `Mass Analysis`; passing the same value for both is the `w` case |
 | `T_param` | float | Dimensionless solution duration |
 | `d_tube` | float | Advective-to-diffusive extraction width around each microtubule. `0.0` = extraction only on the tube ray. **Must lie in `[0, max]`**, where `max = (j + 0.5)·(1/rg_param)·(2π/ry_param)` and `j` is half the tightest gap between neighbouring tubes in `N_LIST`, so extraction regions cannot overlap. The solver silently substitutes `max` for anything outside that range, so `POST /jobs` refuses it instead; `POST /helpers/d_tube` with `{"params": {rg_param, ry_param, N_LIST, d_tube}}` reports the verdict and `max_d_tube` without submitting, and the UI shows it under the field |
 | `domain_radius` | float | Domain radius. Default `1.0` |
@@ -348,12 +349,17 @@ curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
 
 #### `Mass Analysis`
 Mass on each layer as a function of time.
-**Required:** `rg_param`, `ry_param`, `v_param`, `w_param`, `T_param`, `N_LIST`
+**Required:** `rg_param`, `ry_param`, `v_param`, `a_param`, `b_param`, `T_param`, `N_LIST`
 **Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 **Output:** five CSV series under `mass_analysis_results/`, plus PNGs when
 `save_png` is true —
 `diffusive/`, `advective/`, `total/`, `advective_over_total/`,
 `advective_over_initial/`.
+
+> This computation takes the two switch rates separately rather than a single
+> `w_param`; `a_param = b_param = w` reproduces exactly what it did before,
+> filenames included — equal rates are still written `w=<rate>`, and only a
+> genuinely asymmetric pair is written `a=<a>_b=<b>`.
 
 #### `Jrr Mass Sum Over Time`
 Cumulative mass leaving the outer boundary, summed from the radial current

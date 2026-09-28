@@ -78,6 +78,8 @@ _REQUIRED_PARAM_TYPES = {
     "N_amount": int,
     "v_param": float,
     "w_param": float,
+    "a_param": float,
+    "b_param": float,
     "T_param": float,
     "checkpoint": float,
     "N_LIST": list,
@@ -281,6 +283,12 @@ def validate_params(computation_name, params):
                 errors[key] = "must contain at least one switch rate"
             elif any(x < 0 for x in v):
                 errors[key] = "switch rates must be non-negative"
+
+    # Same rule for the single (a, b) pair a mass analysis takes.
+    for key in ("a_param", "b_param"):
+        v = clean.get(key)
+        if v is not None and v < 0:
+            errors[key] = "switch rates must be non-negative"
 
     if computation_name in _CHAR_TIME_COMPUTATIONS:
         t = clean.get("T_param")

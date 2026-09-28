@@ -297,7 +297,8 @@ def run_super_comp_off_center():
     m_init = 16
     n_init = 5
 
-    # launch.collect_mass_analysis(rg_param, ry_param, v_param, w_param, T_param, N_LIST)
+    # launch.collect_mass_analysis(rg_param, ry_param, v_param, w_param, w_param, T_param, N_LIST)
+    # (the two switch rates are separate now: a onto DL, b onto AL; a = b = w recovers the old call)
 
     # Task for 8/5/2026
     # candidate V list : [0.1, 1, 10, 100, 1000, 10**4], for 96x96, N=4,8,16,24, a=b=10, 100
