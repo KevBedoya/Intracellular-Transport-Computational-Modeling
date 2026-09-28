@@ -161,12 +161,13 @@ currently too tedious to do casually.
   rather than guess when a value will not coerce.
 - **Force `show_plt: false`.** It is a desktop-GUI setting that tries to open a
   plot window on the server. Do not expose it as a checkbox; set it and hide it.
-- **Warn on `T ≤ 0.5` for the characteristic-time computations.** The log-fit
-  window is hard-coded at 0.4/0.5, so smaller `T` is rejected server-side. Catch
-  it in the form instead of making the user learn it from a failed job.
-- **Surface the `m*` NaN case honestly.** A degenerate fit records `m_star` as
-  NaN with `t_star` still valid. Render that as "not defined (t* ≥ 0.1)" rather
-  than a blank cell that looks like a bug.
+- **Warn on short `T` for the characteristic-time computations.** `T ≤ 0.1`
+  is rejected server-side (the steady decay must hold for 0.1 after t*), and
+  since t* itself is typically 0.25-0.45, anything under ~0.6 is likely to come
+  back NaN. Say so in the form instead of making the user learn it from a job.
+- **Surface the NaN case honestly.** A point whose decay never settles below
+  `tau` within `T` records `t_star` and `m_star` as NaN. Render that as "no
+  steady decay within T" rather than a blank cell that looks like a bug.
 - **Show `error` on failed jobs.** It carries the solver's own message and is
   usually immediately actionable.
 - **No auth, and the page should say so.** Anyone reaching it can queue and

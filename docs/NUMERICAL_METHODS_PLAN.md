@@ -378,8 +378,11 @@ Two independent wins, neither large in absolute terms:
   non-zero — a **14× waste** at `N = 224, 16` tubes (803 KB → 57 KB). Worth doing
   when the operator is touched anyway, mainly for cache behaviour rather than
   capacity.
-* **The timeseries could be float32.** They feed a log-linear fit that is
-  insensitive at 1e-7; halves the dominant consumer.
+* **The timeseries should stay float64.** This used to read "could be
+  float32", when they fed a two-point log-linear fit insensitive at 1e-7. t*
+  is now located from a second difference of ln M (see `_char_time_onset` in
+  `launch.py`), and at float32 precision the noise floor of the normalised
+  curvature it thresholds is ~1e-2 -- above the default tau of 1e-3.
 
 ---
 

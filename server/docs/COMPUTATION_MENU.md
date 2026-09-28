@@ -245,19 +245,40 @@ Dimensionless time for mass to fall to `mass_threshold`.
 ### Characteristic time
 
 #### `Characteristic Time (mass vs v)`
-Sweeps a list of velocities. For each, fits a log-linear decay to the total-mass
-timeseries between `t = 0.4` and `t = 0.5`, extrapolates the characteristic time
-`t*`, and reports the retained mass `m*` at `t*`.
+Sweeps a list of velocities. For each, finds the characteristic time `t*` —
+the **onset of steady exponential decay** of the total mass — and reports the
+retained mass `m*` at `t*`.
+
+`t*` is judged from the second derivative of `y = ln(total mass)`: the decay is
+steady where `ln M` is a straight line, i.e. `y'' = 0`. The threshold is applied
+to the normalised curvature `κ = |y''| / y'²` (the rate at which the local
+e-folding time drifts), which is dimensionless, so one `tau` means the same thing
+at every velocity and switch rate. `t*` is the time after which `κ` **stays
+below `tau` for the rest of the solve**, and that steady segment must last at
+least 0.1. Derivatives are taken at a fixed spacing of 1e-3 in time, so `t*` does
+not depend on grid resolution. The fit columns in the CSV are a least-squares line
+through `log10(total mass)` over that steady segment.
 **Required:** `rg_param`, `ry_param`, `v_LIST` (list[float]), `w_param`, `T_param`, `N_LIST`
-**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+**Optional:** `tau` (default `1e-3`) — the steady-decay threshold; smaller is
+stricter and gives a later `t*`.
+`device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 **Output:** `char_time_analysis/<timestamp>/`
-- `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`
+- `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`, then
+  `fit_slope, fit_intercept` (the line over the steady segment),
+  `fit_window_t1, fit_window_t2` (that segment, `[t*, T]`),
+  `total_mass_at_t1, total_mass_at_t2` (the mass at its ends) and `tau`
 - `char_t_analysis_plot.png` — `m*` against `v`, log x-axis
 
-> **`T_param` must exceed 0.5.** The fit window is hard-coded at 0.4/0.5, so a
-> smaller `T` is rejected within a second rather than after the full solve.
-> If the fit degenerates, `m_star` is written as an empty field (NaN) with a
-> warning and `t_star` is still reported — the run is not lost.
+> **`T_param` must leave room for the steady decay.** `T ≤ 0.1` is rejected
+> within a second. Above that, the onset is only known after the solve: it is
+> typically 0.25–0.45 at `tau = 1e-3`, so `T` of about 1 is the safe choice. A
+> point whose decay has not settled below `tau` with 0.1 of the record left writes
+> `t_star` and `m_star` as empty fields (NaN) with a warning, and the rest of
+> the sweep is kept.
+>
+> **This definition replaced an earlier one** (a line through `log10 M` at
+> `t = 0.4` and `t = 0.5`, extrapolated to its intercept, with `m*` read at
+> `10·t*`). Numbers from before the change are not comparable with those after.
 >
 > One velocity per job is the usual choice: a `v_LIST` of five values costs five
 > full solves sequentially inside one job, whereas five separate jobs run four
@@ -270,7 +291,8 @@ layer, and **every pair in `a_list × b_list` is solved** — a 4×4 grid is six
 full solves. `v_param` is a single value here, not a list: the grid is already
 two-dimensional.
 **Required:** `rg_param`, `ry_param`, `a_list` (list[float]), `b_list` (list[float]), `v_param`, `T_param`, `N_LIST`
-**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+**Optional:** `tau` (default `1e-3`), as above.
+`device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 `workers` — how many points to solve at once on the CPU; `0` (default) uses one
 per core, less one.
 **Output:** `ab_grid_char_time/<timestamp>/`
@@ -314,10 +336,9 @@ curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
 > `workers` when submitting a grid into a busy queue** or it will contend with
 > whatever else is running.
 >
-> Both the fit-window rule and the degenerate-fit behaviour are the same as the
-> velocity sweep above: `T_param` must exceed 0.5, and a point whose fit
-> degenerates records `m_star` as NaN with a warning while still reporting
-> `t_star`. A single point at `a_list = b_list = [w]` reproduces
+> The `T_param` rule and the degenerate-point behaviour are the same as for the
+> velocity sweep above: `T ≤ 0.1` is refused, and a point whose decay does not
+> settle records `t_star` and `m_star` as NaN with a warning. A single point at `a_list = b_list = [w]` reproduces
 > `Characteristic Time (mass vs v)` at that `w` exactly, which is asserted by
 > `tests/test_ab_grid_char_time.py`.
 

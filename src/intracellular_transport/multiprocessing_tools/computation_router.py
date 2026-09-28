@@ -97,10 +97,13 @@ _OPTIONAL_TYPE_OVERRIDES = {
     "d_tube": float,
 }
 
-# Computations whose log-fit window is hard-coded at x1=0.4, x2=0.5, so T must
-# exceed 0.5 or the pre-flight check rejects the run.
-_FIT_WINDOW_MIN_T = 0.5
-_FIT_WINDOW_COMPUTATIONS = {"Characteristic Time (mass vs v)",
+# Characteristic-time computations. t* is the onset of steady exponential decay,
+# which the criterion only accepts if the decay then holds for at least
+# launch.CHAR_TIME_MIN_HOLD (0.1) before T -- so T must exceed that, and in
+# practice the onset itself (typically 0.25-0.45). Mirrored here rather than
+# imported so validation stays free of the solver's numba import.
+_CHAR_TIME_MIN_T = 0.1
+_CHAR_TIME_COMPUTATIONS = {"Characteristic Time (mass vs v)",
                             "Characteristic Time (a,b grid)"}
 
 
@@ -228,12 +231,16 @@ def validate_params(computation_name, params):
             elif any(x < 0 for x in v):
                 errors[key] = "switch rates must be non-negative"
 
-    if computation_name in _FIT_WINDOW_COMPUTATIONS:
+    if computation_name in _CHAR_TIME_COMPUTATIONS:
         t = clean.get("T_param")
-        if t is not None and t <= _FIT_WINDOW_MIN_T:
+        if t is not None and t <= _CHAR_TIME_MIN_T:
             errors["T_param"] = (
-                f"must exceed {_FIT_WINDOW_MIN_T} for this computation: the "
-                f"log-fit window is fixed at 0.4-0.5")
+                f"must exceed {_CHAR_TIME_MIN_T} for this computation: the "
+                f"steady decay must hold for at least {_CHAR_TIME_MIN_T} after "
+                f"t*, which itself is typically 0.25-0.45")
+        tau = clean.get("tau")
+        if tau is not None and not tau > 0:
+            errors["tau"] = "must be a positive threshold"
 
     # Device selection. Checked here so a typo ("gpu1", "cuda:0") is rejected at
     # submission rather than after the solve has been queued -- and so that

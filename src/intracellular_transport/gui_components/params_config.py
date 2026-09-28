@@ -289,7 +289,8 @@ PARAMETER_SCHEMAS = {
             ("m_init", 0),
             ("n_init", 0),
             ("show_plt", False),
-            ("device", "cpu")
+            ("device", "cpu"),
+            ("tau", 1e-3)
         ],
         "approach": ["time-dependent"]
     },
@@ -315,7 +316,8 @@ PARAMETER_SCHEMAS = {
             ("n_init", 0),
             ("show_plt", False),
             ("device", "cpu"),
-            ("workers", 0)
+            ("workers", 0),
+            ("tau", 1e-3)
         ],
         "approach": ["time-dependent"]
     },
@@ -459,6 +461,10 @@ PARAMETER_HINTS = {
     "workers": ("workers: How many (a, b) points to solve concurrently on the "
                 "CPU. 0 (default) uses one per core, less one. Ignored on the "
                 "GPU, where a single solve already fills the card. (int)"),
+    "tau": ("tau: Steady-decay threshold for t*. t* is the time after which "
+            "the normalised curvature |y''|/y'^2 of y = ln(total mass) stays "
+            "below tau. Smaller is stricter and gives a later t*. "
+            "Default 1e-3. (float)"),
     "grid_list": "grid_list: Square grid sizes to sweep. Provide as a list of ints: []",
     "N_amount": "N_amount: Number of evenly spaced microtubules. (int)",
     "checkpoint": "checkpoint: Time- or mass-stamp at which data is collected. (float)",

@@ -1070,56 +1070,179 @@ def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
         mass_checkpoint, center_init_cond, m_init, n_init, checkpoint=cp)
 
 
-# The log-linear fit window behind t*, in dimensionless time. Fixed rather than
-# exposed as a parameter: a characteristic time in this project is *defined* as
-# the decay of log10(total mass) across these two points, so a kernel fitting a
-# different window would report a t* not comparable with any number already
-# published. Both characteristic-time kernels read the window from here, so the
-# two cannot silently drift apart.
-CHAR_TIME_FIT_X1 = 0.4
-CHAR_TIME_FIT_X2 = 0.5
+# v------------------------------ The t* criterion ------------------------------v
+#
+# t* is the onset of steady exponential decay: the earliest time after which
+# log(total mass) is a straight line in t, judged by its second derivative.
+#
+# WHAT IS MEASURED. With y(t) = ln M(t), the local decay rate is
+# lambda(t) = -y'(t), and the curve is a straight line exactly where y'' = 0.
+# The raw y'' is not thresholded, though, because its size scales with the
+# decay rate itself -- which varies by more than a factor of two across an
+# (a, b) grid -- so one threshold would mean a different thing at every point.
+# Instead the criterion uses the normalised curvature
+#
+#     kappa(t) = |y''| / (y')**2  =  |d/dt (1 / lambda)|,
+#
+# the rate at which the local e-folding time drifts. It is dimensionless, is
+# independent of the decay rate and (with the natural log) of the log base, and
+# tends to zero exactly as the solution collapses onto its slowest eigenmode.
+#
+# WHY "STAYS BELOW" AND NOT A SLIDING WINDOW. A window of fixed length that
+# asks "is y'' small throughout?" can be fooled by an inflection, where y''
+# passes through zero, or by a slow transient that is locally flat. The regime
+# the definition is after -- single-mode decay -- is the only one in which
+# kappa stays small for the rest of the solve, so that is the test: t* is where
+# kappa drops below tau for the last time, and the record must then continue
+# for at least CHAR_TIME_MIN_HOLD beyond it for the run to count. That needs no
+# window width, and it is O(n).
+#
+# WHY A FIXED DIFFERENCING SPACING. The derivatives are taken on the timeseries
+# decimated to CHAR_TIME_DIFF_SPACING, not at the raw sample spacing. Roundoff
+# in a second difference grows as 1/h**2, and h shrinks with the grid: at the
+# raw spacing of a 160x160 run the noise floor in kappa is ~1e-1, larger than
+# any useful tau. At 1e-3 it is ~1e-9 on every grid, while the curvature being
+# measured varies on a timescale of ~0.05, so the spacing costs no accuracy.
+#
+# The three constants below are fixed rather than exposed, like the fit window
+# they replace: they are part of the definition of t*, and both kernels read
+# them from here so they cannot drift apart. tau is the one knob, exposed on
+# both kernels with CHAR_TIME_TAU as its default.
+CHAR_TIME_TAU = 1e-3
+CHAR_TIME_DIFF_SPACING = 1e-3
+CHAR_TIME_MIN_HOLD = 0.1
+
+# The per-point result columns both kernels write, in order, after their own
+# leading parameter column(s). One list so the two CSVs stay concatenable.
+# fit_window_t1/_t2 are the detected steady segment [t*, t_end] -- no longer a
+# fixed window -- and total_mass_at_t1/_t2 the mass at its two ends.
+CHAR_TIME_RESULT_COLUMNS = ("t_star", "m_star", "fit_slope", "fit_intercept",
+                            "fit_window_t1", "fit_window_t2",
+                            "total_mass_at_t1", "total_mass_at_t2", "tau")
 
 
-def _char_time_fit_indices(rg_param, ry_param, T_param, MA_collection_factor,
-                           relative_k):
-    """Sample indices into the mass timeseries for the two fit points.
+def _char_time_preflight(T_param, MA_collection_factor, relative_k, tau):
+    """Reject a run that cannot possibly yield a t*, before any solving.
 
-    Pre-flight and cheap: this runs before any solving, so a parameter set whose
-    fit window falls outside the requested T fails immediately instead of after
-    the full time-stepping loop -- which at 160x160 means days.
+    Pre-flight and cheap: it runs before the time-stepping loop, which at
+    160x160 means days, so a hopeless parameter set fails in a second rather
+    than after the solve.
 
-    Because the window is fixed at CHAR_TIME_FIT_X1 / _X2, every
-    characteristic-time computation silently requires ``T_param`` to exceed
-    CHAR_TIME_FIT_X2; otherwise the fit would index past the end of a series
-    that only holds ``relative_k`` samples.
-
-    Note that ``compute_K`` is called here with the default domain_radius and D
-    rather than the run's own, matching what collect_char_time_mass has always
-    done. The two agree for the only values ever used (1.0 and 1.0); they would
-    not for any other, so both kernels share this one definition rather than
-    each growing its own.
+    Where the onset falls is only known after the solve, so this can only rule
+    out what is certain to fail: a non-positive tau, or a record too short to
+    hold the CHAR_TIME_MIN_HOLD tail that the criterion demands after t*. A run
+    that passes may still find no onset within T -- that is reported as a
+    degenerate point after the solve, not raised.
     """
-    t1_ = num.compute_K(rg_param, ry_param, CHAR_TIME_FIT_X1)
-    t1 = num.closest_multiple(t1_, MA_collection_factor) // MA_collection_factor
-
-    t2_ = num.compute_K(rg_param, ry_param, CHAR_TIME_FIT_X2)
-    t2 = num.closest_multiple(t2_, MA_collection_factor) // MA_collection_factor
-
-    if not (0 <= t1 < relative_k and 0 <= t2 < relative_k):
+    if not (np.isfinite(tau) and tau > 0):
+        raise ValueError(f"tau must be a positive number (got tau={tau})")
+    if T_param <= CHAR_TIME_MIN_HOLD or relative_k < 8:
         raise ValueError(
-            f"characteristic-time fit indices out of range: "
-            f"t1={t1}, t2={t2}, valid range [0, {relative_k}). "
-            f"The fit window is hard-coded at x1={CHAR_TIME_FIT_X1}, "
-            f"x2={CHAR_TIME_FIT_X2}, so T_param must exceed "
-            f"{CHAR_TIME_FIT_X2} (got T_param={T_param}).")
-    return t1, t2
+            f"T_param={T_param} is too short for a characteristic time: the "
+            f"criterion needs the steady decay to hold for at least "
+            f"CHAR_TIME_MIN_HOLD={CHAR_TIME_MIN_HOLD} after t*, so T_param "
+            f"must exceed {CHAR_TIME_MIN_HOLD} (and in practice the onset "
+            f"itself, typically 0.25-0.45).")
+
+
+def _char_time_onset(total_mass, sample_dt, tau=CHAR_TIME_TAU,
+                     spacing=CHAR_TIME_DIFF_SPACING,
+                     min_hold=CHAR_TIME_MIN_HOLD):
+    """t* from a total-mass timeseries, by the criterion described above.
+
+    ``total_mass[i]`` is the mass at time ``i * sample_dt``. Pure numpy and
+    free of solver state, so it is tested directly against analytic curves in
+    tests/test_char_time_criterion.py.
+
+    Returns a dict of plain floats:
+
+      * ``t_star`` -- the onset, interpolated between the two decimated samples
+        where kappa crosses tau (log-linearly in kappa, which decays roughly
+        exponentially), so it varies continuously with the parameters rather
+        than in steps of ``spacing``;
+      * ``m_star`` -- the total mass at t*;
+      * ``fit_slope``, ``fit_intercept`` -- the least-squares line through
+        log10(total mass) over the steady segment [t*, t_end], in the same
+        units the old two-point fit reported;
+      * ``fit_window_t1``, ``fit_window_t2`` -- that segment's ends;
+      * ``total_mass_at_t1``, ``total_mass_at_t2`` -- the mass at each end.
+
+    Every entry is NaN when no onset is found -- kappa never settles below tau,
+    or settles too late to hold for ``min_hold``. That is the degenerate case;
+    the caller reports it.
+    """
+    nan = float("nan")
+    degenerate = dict(t_star=nan, m_star=nan, fit_slope=nan, fit_intercept=nan,
+                      fit_window_t1=nan, fit_window_t2=nan,
+                      total_mass_at_t1=nan, total_mass_at_t2=nan)
+
+    mass = np.asarray(total_mass, dtype=np.float64)
+    # Only the leading run of positive, finite samples is usable: a log is
+    # needed, and a sample past a bad one cannot be differenced across it.
+    bad = np.nonzero(~(np.isfinite(mass) & (mass > 0)))[0]
+    if bad.size:
+        mass = mass[:bad[0]]
+
+    stride = max(1, int(round(spacing / sample_dt)))
+    coarse = mass[::stride]
+    h = stride * sample_dt
+    if coarse.size < 5:
+        return degenerate
+
+    t = np.arange(coarse.size) * h
+    y = np.log(coarse)
+    dy = np.gradient(y, h)
+    d2y = np.gradient(dy, h)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kappa = np.abs(d2y) / dy ** 2
+
+    # np.gradient is one-sided at the ends, and the second pass compounds it,
+    # so the first and last two samples are not judged.
+    judged = slice(2, coarse.size - 2)
+    k = kappa[judged]
+    # Non-finite kappa (y' = 0 at the very start, before any mass has left)
+    # counts as "not yet straight", which is what it is.
+    over = ~(np.isfinite(k) & (k <= tau))
+    if over.all():
+        return degenerate
+    if over.any():
+        last = judged.start + int(np.nonzero(over)[0][-1])
+        onset = last + 1
+        k0, k1 = kappa[last], kappa[onset]
+        if np.isfinite(k0) and k0 > tau and 0 < k1 <= tau:
+            frac = (np.log(k0) - np.log(tau)) / (np.log(k0) - np.log(k1))
+        else:
+            frac = 1.0
+        t_star = t[last] + frac * h
+    else:
+        # Already settled at the first judged sample.
+        onset = judged.start
+        t_star = t[onset]
+
+    t_end = t[coarse.size - 1]
+    if t_end - t_star < min_hold:
+        return degenerate
+
+    # m* at t*, from the full-resolution series rather than the decimated one.
+    fine_t = np.arange(mass.size) * sample_dt
+    m_star = float(np.exp(np.interp(t_star, fine_t, np.log(mass))))
+
+    seg = slice(onset, coarse.size)
+    slope, intercept = np.polyfit(t[seg], np.log10(coarse[seg]), 1)
+
+    return dict(t_star=float(t_star), m_star=m_star,
+                fit_slope=float(slope), fit_intercept=float(intercept),
+                fit_window_t1=float(t_star), fit_window_t2=float(t_end),
+                total_mass_at_t1=m_star,
+                total_mass_at_t2=float(coarse[-1]))
+# ^------------------------------ The t* criterion ------------------------------^
 
 
 def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
-                     T_param, N_LIST, MA_collection_factor, relative_k, t1, t2,
+                     T_param, N_LIST, MA_collection_factor, relative_k, tau,
                      d_tube, domain_radius, D, mass_checkpoint,
                      center_init_cond, m_init, n_init, device, label=""):
-    """One solve plus the log-linear fit that defines t*.
+    """One solve plus the steady-decay criterion that defines t*.
 
     This is the characteristic-time kernel proper: everything done per parameter
     point, with no plotting, no file writing and no knowledge of what is being
@@ -1163,62 +1286,43 @@ def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
                          domain_radius, D, mass_checkpoint,
                          center_init_cond, m_init, n_init, cp=cp)
 
-    y1 = np.log10(MA_TM_timeseries[t1])
-    y2 = np.log10(MA_TM_timeseries[t2])
+    # Sample i of the timeseries is the state after i * MA_collection_factor
+    # steps, so the samples are MA_collection_factor * dT apart in time.
+    sample_dt = MA_collection_factor * num.compute_dT(rg_param, ry_param,
+                                                      domain_radius, D)
+    row = _char_time_onset(MA_TM_timeseries, sample_dt, tau=tau)
 
-    m = (y2 - y1) / (CHAR_TIME_FIT_X2 - CHAR_TIME_FIT_X1)
-    b = y2 - m * CHAR_TIME_FIT_X2
-
-    # characteristic time
-    t_star = -b / m
-
-    # compute the mass corresponding to t_star, and then record
-    k_star_ = num.compute_K(rg_param, ry_param, 10 * t_star)
-    k_star = num.closest_multiple(k_star_, MA_collection_factor) // MA_collection_factor
-
-    # Guard the k_star lookup.
-    # k_star is derived from the *fitted* t_star, so it cannot be validated
-    # before the solve.  A degenerate fit (t_star non-finite, non-positive,
-    # or large enough that 10 * t_star exceeds T_param) would index outside
-    # MA_TM_timeseries and raise a bare IndexError only after the entire
-    # time-stepping loop has finished -- discarding hours of computation for
-    # a one-line lookup.  Instead, record m_star as NaN and report loudly:
-    # t_star is unaffected and is still written to the CSV.
-    if (not np.isfinite(t_star)) or t_star <= 0 or not (0 <= k_star < relative_k):
-        print("*** WARNING: degenerate characteristic-time fit ***")
+    # The onset is only known after the solve, so a record that ends before
+    # the decay settles cannot be caught in pre-flight. Report it loudly and
+    # record NaN rather than raise: a raise here would discard the whole solve,
+    # and the other points of a sweep are still good.
+    if not np.isfinite(row["t_star"]):
+        print("*** WARNING: no steady exponential decay found ***")
         print(f"    point      = {label or tag}")
-        print(f"    t_star     = {t_star}")
-        print(f"    k_star     = {k_star}  (valid range [0, {relative_k}))")
-        print(f"    m_star requires 10 * t_star < T_param; "
-              f"here T_param={T_param} and 10 * t_star={10 * t_star}")
-        print("    recording m_star = NaN; t_star is still reported.")
-        m_star = np.nan
-    else:
-        m_star = MA_TM_timeseries[k_star]
+        print(f"    tau        = {tau}")
+        print(f"    the normalised curvature |y''|/y'^2 of y = ln(total mass) "
+              f"did not settle below tau with at least "
+              f"{CHAR_TIME_MIN_HOLD} of the record left (T_param={T_param}).")
+        print("    recording t_star = m_star = NaN; raise T_param or tau.")
 
-    # Record the fit itself, not just what it implies.
-    #
-    # The slope is the decay rate of log10(total mass) across the window and
-    # is a result in its own right -- it is what t* is derived from, and it
-    # varies with grid size in a way t* alone does not show. It used to be a
-    # local that went out of scope, which meant recovering it afterwards
-    # needed the mass timeseries, and that is not retained: for the GPU runs
-    # nothing is logged per step, so the slope was simply unrecoverable
-    # short of re-solving. The two window masses are kept too, since they
-    # are the entire input to the fit and cost two floats.
-    return {
-        "t_star": float(t_star),
-        "m_star": float(m_star),
-        "fit_slope": float(m),
-        "fit_intercept": float(b),
-        "total_mass_at_t1": float(MA_TM_timeseries[t1]),
-        "total_mass_at_t2": float(MA_TM_timeseries[t2]),
-    }
+    # The fit over the steady segment is recorded, not only t*: its slope is
+    # the asymptotic decay rate of log10(total mass), a result in its own right,
+    # and the mass timeseries it came from is not retained -- a GPU run logs
+    # nothing per step -- so once it is out of the CSV it is unrecoverable
+    # short of re-solving.
+    row["tau"] = float(tau)
+    return row
 
 
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
                            mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True,
-                           device=DEVICE_CPU):
+                           device=DEVICE_CPU, tau=CHAR_TIME_TAU):
+    """m* and t* against velocity, at a single mutual switch rate a = b = w.
+
+    t* is the onset of steady exponential decay of the total mass and m* the
+    mass remaining at t*; ``tau`` is the threshold on the normalised curvature
+    of ln(total mass) that decides it. See the block above _char_time_onset.
+    """
 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
     print("deltaT = ", num.compute_dT(rg_param, ry_param))
@@ -1227,17 +1331,15 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     b_param = w_param
     a_param = w_param
 
-    x1 = CHAR_TIME_FIT_X1
-    x2 = CHAR_TIME_FIT_X2
-    t1, t2 = _char_time_fit_indices(rg_param, ry_param, T_param,
-                                    MA_collection_factor, relative_k)
+    tau = float(tau)
+    _char_time_preflight(T_param, MA_collection_factor, relative_k, tau)
 
     # One fit per velocity, keyed by it, in the order the sweep was requested.
     fits = {}
     for v_param in v_LIST:
         fits[v_param] = _char_time_point(
             f"char_time_v{v_param:g}", rg_param, ry_param, a_param, b_param,
-            v_param, T_param, N_LIST, MA_collection_factor, relative_k, t1, t2,
+            v_param, T_param, N_LIST, MA_collection_factor, relative_k, tau,
             d_tube, domain_radius, D, mass_checkpoint, center_init_cond,
             m_init, n_init, device, label=f"v = {v_param}")
 
@@ -1260,17 +1362,9 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     data_location = os.path.join(output_directory, 'char_t_analysis_data.csv')
     # v, t_star and m_star stay in the leading columns so anything already
     # reading this file by position keeps working; the fit columns are appended.
-    df = pd.DataFrame({
-        'v': v_axis,
-        't_star': [fits[v_param]["t_star"] for v_param in v_axis],
-        'm_star': m_axis,
-        'fit_slope': [fits[v_param]["fit_slope"] for v_param in v_axis],
-        'fit_intercept': [fits[v_param]["fit_intercept"] for v_param in v_axis],
-        'fit_window_t1': [x1] * len(v_axis),
-        'fit_window_t2': [x2] * len(v_axis),
-        'total_mass_at_t1': [fits[v_param]["total_mass_at_t1"] for v_param in v_axis],
-        'total_mass_at_t2': [fits[v_param]["total_mass_at_t2"] for v_param in v_axis],
-    })
+    df = pd.DataFrame({'v': v_axis})
+    for column in CHAR_TIME_RESULT_COLUMNS:
+        df[column] = [fits[v_param][column] for v_param in v_axis]
     df.to_csv(data_location, index=False)
 
     print(f'Characteristic time plot saved to {plot_location}')
@@ -1288,7 +1382,7 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
 # WHY THE (a, b) POINTS RUN AS CONCURRENT PROCESSES ON THE CPU
 #
 # Every (a, b) pair is an independent solve: the pairs share no state, and each
-# one only reads the parameters it was given and returns six floats. So the grid
+# one only reads the parameters it was given and returns a handful of floats. So the grid
 # parallelises perfectly, and the reasons it is worth doing are the same three
 # that made the microtubule sweep in main.py concurrent:
 #
@@ -1461,7 +1555,8 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
                               N_LIST, MA_collection_factor=5, domain_radius=1.0,
                               D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
                               center_init_cond=True, m_init=0, n_init=0,
-                              show_plt=False, device=DEVICE_CPU, workers=0):
+                              show_plt=False, device=DEVICE_CPU, workers=0,
+                              tau=CHAR_TIME_TAU):
     """Characteristic time t* over the full grid of (a, b) switch rates.
 
     Where ``collect_char_time_mass`` sweeps velocity at a single switch rate
@@ -1472,9 +1567,10 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     list -- the grid is already two-dimensional, and a third axis would multiply
     an already expensive job by the length of a velocity list.
 
-    Each point is the same solve-and-fit as the velocity sweep, run through the
-    shared ``_char_time_point`` kernel, so a 1x1 grid at (w, w) reproduces
-    ``collect_char_time_mass`` for that velocity exactly.
+    Each point is the same solve-and-criterion as the velocity sweep, run
+    through the shared ``_char_time_point`` kernel, so a 1x1 grid at (w, w)
+    reproduces ``collect_char_time_mass`` for that velocity exactly. ``tau`` is
+    the steady-decay threshold, as there.
 
     Outputs, under ``data_output/ab_grid_char_time/<timestamp>/``. Every
     filename carries the parameters held fixed across the run -- ``v``, the
@@ -1503,10 +1599,8 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     print("deltaT = ", num.compute_dT(rg_param, ry_param))
     relative_k = int(np.floor(K / MA_collection_factor))
 
-    x1 = CHAR_TIME_FIT_X1
-    x2 = CHAR_TIME_FIT_X2
-    t1, t2 = _char_time_fit_indices(rg_param, ry_param, T_param,
-                                    MA_collection_factor, relative_k)
+    tau = float(tau)
+    _char_time_preflight(T_param, MA_collection_factor, relative_k, tau)
 
     # Normalised once, here rather than per point: N_LIST crosses a process
     # boundary on the CPU path and goes to the device on the GPU one, and the
@@ -1545,7 +1639,7 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     cfg = dict(
         rg_param=rg_param, ry_param=ry_param, v_param=v_param, T_param=T_param,
         N_LIST=N_LIST, MA_collection_factor=MA_collection_factor,
-        relative_k=relative_k, t1=t1, t2=t2, d_tube=d_tube,
+        relative_k=relative_k, tau=tau, d_tube=d_tube,
         domain_radius=domain_radius, D=D, mass_checkpoint=mass_checkpoint,
         center_init_cond=center_init_cond, m_init=m_init, n_init=n_init,
         device=DEVICE_GPU if on_gpu else DEVICE_CPU)
@@ -1602,22 +1696,15 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     # The fit that produced them is appended, under the same column names
     # collect_char_time_mass writes, so the two CSVs stay concatenable. Those
     # columns are kept rather than dropped for the reason they were added to the
-    # velocity sweep in the first place: the slope is what t* is derived from and
-    # is a result in its own right, the mass timeseries it came from is not
+    # velocity sweep in the first place: the slope over the steady segment is
+    # the asymptotic decay rate, a result in its own right, the mass timeseries
+    # it came from is not
     # retained, and on a GPU run nothing is logged per step -- so once they are
     # out of this file they are unrecoverable short of re-solving.
-    df = pd.DataFrame({
-        'a': [r["a"] for r in rows],
-        'b': [r["b"] for r in rows],
-        't_star': [r["t_star"] for r in rows],
-        'm_star': [r["m_star"] for r in rows],
-        'fit_slope': [r["fit_slope"] for r in rows],
-        'fit_intercept': [r["fit_intercept"] for r in rows],
-        'fit_window_t1': [x1] * len(rows),
-        'fit_window_t2': [x2] * len(rows),
-        'total_mass_at_t1': [r["total_mass_at_t1"] for r in rows],
-        'total_mass_at_t2': [r["total_mass_at_t2"] for r in rows],
-    })
+    df = pd.DataFrame({'a': [r["a"] for r in rows],
+                       'b': [r["b"] for r in rows]})
+    for column in CHAR_TIME_RESULT_COLUMNS:
+        df[column] = [r[column] for r in rows]
     df.to_csv(data_location, index=False)
 
     # --- figures -----------------------------------------------------------

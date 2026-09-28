@@ -4,7 +4,7 @@ The kernel's whole claim is that it is the existing characteristic-time solve
 run once per switch-rate pair, several at a time. So there are only three things
 that can go wrong, and each has a test here:
 
-  * the *fit* could differ from the velocity sweep's, which would make a t* from
+  * the *criterion* could differ from the velocity sweep's, which would make a t* from
     this kernel not comparable with one already published;
   * running the points concurrently could change them, which would mean the
     parallelism is not the transparent optimisation it is documented to be;
@@ -48,9 +48,10 @@ from launch_functions import launch                            # noqa: E402
 from system_configuration import file_paths as fp              # noqa: E402
 
 RG = RY = 16
-# Above 10 * t* for every point tested here, which is what m* needs to be
-# resolvable; at T = 0.6 these same runs fit a t* of about 0.077 and report m*
-# as NaN. Chosen so the tests compare a real number rather than agreeing on NaN.
+# Long enough for every point tested here to reach steady decay and hold it
+# for CHAR_TIME_MIN_HOLD: these runs find t* between about 0.31 and 0.37 at the
+# default tau. Chosen so the tests compare real numbers rather than agreeing on
+# NaN.
 T = 1.0
 N_LIST = np.array([0, 4, 8, 12], dtype=np.int64)
 V = 100.0
@@ -62,14 +63,23 @@ B_LIST = [1.0, 10.0]
 # one is a float the solve produced, not a parameter echoed back, so an exact
 # comparison is the right one: the CPU path is deterministic.
 RESULT_COLUMNS = ("t_star", "m_star", "fit_slope", "fit_intercept",
+                  "fit_window_t1", "fit_window_t2",
                   "total_mass_at_t1", "total_mass_at_t2")
 
 # CPU-vs-GPU tolerance. The two disagree because the mass and centre reductions
 # are sequential on one and parallel tree reductions on the other, and
 # floating-point addition is not associative -- see docs/GPU_PLAN.md. This is the
-# same criterion tests/test_gpu_agreement.py applies to the underlying solve;
-# t* is a ratio of two fitted quantities, so it can amplify that slightly.
+# same criterion tests/test_gpu_agreement.py applies to the underlying solve.
 GPU_TOLERANCE = 1e-9
+
+# Looser for the columns located by the steady-decay criterion (t* and the
+# masses read at it), because locating t* is ill-conditioned by construction:
+# it reads a second difference of ln M at spacing 1e-3, which turns a ~1e-14
+# disagreement in M into ~1e-9 in kappa, and t* moves by dkappa / |dkappa/dt|
+# with kappa ~ tau and |dln kappa/dt| ~ 45. That bounds the relative error in
+# t* near 1e-7; measured on these grids it is ~3e-9.
+GPU_ONSET_TOLERANCE = 1e-6
+ONSET_COLUMNS = {"t_star", "m_star", "fit_window_t1", "total_mass_at_t1"}
 
 
 def _rows(result):
@@ -196,8 +206,8 @@ def test_writes_the_csv_and_all_three_figures():
 def test_csv_leads_with_the_four_result_columns():
     """a, b, t_star, m_star are the results and come first, in that order.
 
-    The fit columns follow rather than being dropped: the slope is what t* is
-    derived from, and neither it nor the two window masses can be recovered
+    The fit columns follow rather than being dropped: the slope over the steady
+    segment is the asymptotic decay rate, and neither it nor the segment can be recovered
     afterwards -- the mass timeseries is not retained, and a GPU run logs
     nothing per step.
     """
@@ -206,9 +216,38 @@ def test_csv_leads_with_the_four_result_columns():
     assert list(frame.columns[:4]) == ["a", "b", "t_star", "m_star"], \
         f"unexpected leading columns: {list(frame.columns)}"
     assert "fit_slope" in frame.columns
+    assert (frame["tau"] == launch.CHAR_TIME_TAU).all()
     # v, N and the grid do not vary within a run, so they belong in the
     # filename, not in a column repeated on every row.
     assert "v" not in frame.columns
+
+
+def test_t_star_is_the_onset_of_steady_decay():
+    """On a real solve, t* is where ln(total mass) turns into a straight line.
+
+    Checked independently of _char_time_onset's own arithmetic: the decay rate
+    measured over the first half of the steady segment must match the one over
+    the second half, which is what "steady" means, and a stricter tau must give
+    a later onset.
+    """
+    loose = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [10.0], [10.0], V, T, N_LIST, show_plt=False, workers=1,
+        tau=1e-2)).iloc[0]
+    strict = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [10.0], [10.0], V, T, N_LIST, show_plt=False, workers=1,
+        tau=1e-4)).iloc[0]
+
+    assert 0 < loose["t_star"] < strict["t_star"] < T, (loose, strict)
+    assert strict["tau"] == 1e-4
+    t1, t2 = strict["fit_window_t1"], strict["fit_window_t2"]
+    assert t1 == strict["t_star"] and math.isclose(t2, T, abs_tol=2e-3)
+    # The line through the segment's two ends agrees with the least-squares
+    # slope over it: the segment really is straight.
+    chord = (math.log10(strict["total_mass_at_t2"])
+             - math.log10(strict["total_mass_at_t1"])) / (t2 - t1)
+    assert math.isclose(chord, strict["fit_slope"], rel_tol=1e-3),         (chord, strict["fit_slope"])
+    assert strict["m_star"] == strict["total_mass_at_t1"]
+    assert 0 < strict["m_star"] < loose["m_star"] < 1
 
 
 def test_invalid_input_is_refused():
@@ -216,8 +255,10 @@ def test_invalid_input_is_refused():
     cases = [
         (dict(a_list=[], b_list=[1.0]), "at least one"),
         (dict(a_list=[1.0], b_list=[]), "at least one"),
-        # The fit window is fixed at 0.4/0.5, so T below it cannot be fitted.
-        (dict(a_list=[1.0], b_list=[1.0], T_param=0.2), "fit indices"),
+        # The steady decay must hold for CHAR_TIME_MIN_HOLD after t*, so a
+        # record no longer than that cannot yield one.
+        (dict(a_list=[1.0], b_list=[1.0], T_param=0.05), "too short"),
+        (dict(a_list=[1.0], b_list=[1.0], tau=0.0), "tau must be"),
         (dict(a_list=[1.0], b_list=[1.0], device="cuda:0"), "unknown device"),
     ]
     for overrides, expected in cases:
@@ -259,9 +300,11 @@ def test_gpu_matches_cpu_within_tolerance():
         c = cpu[column].to_numpy(dtype=np.float64)
         g = gpu[column].to_numpy(dtype=np.float64)
         error = np.max(np.abs(c - g) / np.maximum(np.abs(c), 1e-300))
-        if error > GPU_TOLERANCE:
+        bound = (GPU_ONSET_TOLERANCE if column in ONSET_COLUMNS
+                 else GPU_TOLERANCE)
+        if error > bound:
             worst.append(f"{column}: relative error {error:.3e} exceeds "
-                         f"{GPU_TOLERANCE:.0e}")
+                         f"{bound:.0e}")
     assert not worst, "GPU grid disagrees with CPU grid:\n  " + "\n  ".join(worst)
 
 

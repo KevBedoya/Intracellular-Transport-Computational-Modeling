@@ -18,7 +18,11 @@ their sum, so the characteristic-time fit can be redone from it:
     t* from a log-linear fit of total mass between t = 0.4 and t = 0.5
     m* = total mass at t = 10 t*
 
-matching launch.collect_char_time_mass. The log samples every 1e6 steps rather
+matching the definition launch.collect_char_time_mass used when these runs
+were made. That definition has since been replaced by the steady-decay onset
+(see _char_time_onset in launch.py); this script deliberately keeps the old one,
+because it exists to recover and validate results of the 2026-08-18 study,
+which were computed under it. Do not compare its output with new runs. The log samples every 1e6 steps rather
 than every ``MA_collection_factor`` steps, so values at 0.4, 0.5 and 10 t* come
 from interpolating log10(total mass) linearly in t -- exact for a pure
 exponential and very close for this nearly-exponential decay.
@@ -48,7 +52,7 @@ RECOVERED = os.path.join(OUT_DIR, "recovered_rows.json")
 sys.path.insert(0, os.path.join(ROOT, "src", "intracellular_transport"))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-# Fit window, fixed in collect_char_time_mass.
+# Fit window of the pre-2026-09-28 definition (see the module docstring).
 X1, X2 = 0.4, 0.5
 
 # Largest disagreement tolerated against a surviving CSV, in percent. Set well
