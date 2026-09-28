@@ -177,7 +177,7 @@ are repeated in its entry below.
 | `v_param` | float | Particle velocity along the advective layer. Negative is inward |
 | `w_param` | float | Mutual switch rate between diffusive and advective layers (sets `a = b = w`) |
 | `T_param` | float | Dimensionless solution duration |
-| `d_tube` | float | Advective-to-diffusive extraction width around each microtubule. `0.0` = extraction only on the tube ray |
+| `d_tube` | float | Advective-to-diffusive extraction width around each microtubule. `0.0` = extraction only on the tube ray. **Must lie in `[0, max]`**, where `max = (j + 0.5)·(1/rg_param)·(2π/ry_param)` and `j` is half the tightest gap between neighbouring tubes in `N_LIST`, so extraction regions cannot overlap. The solver silently substitutes `max` for anything outside that range, so `POST /jobs` refuses it instead; `POST /helpers/d_tube` with `{"params": {rg_param, ry_param, N_LIST, d_tube}}` reports the verdict and `max_d_tube` without submitting, and the UI shows it under the field |
 | `domain_radius` | float | Domain radius. Default `1.0` |
 | `D` | float | Diffusion coefficient. Default `1.0` |
 

@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 
 let SCHEMA = null;          // schema of the selected computation
 let SELECTED = null;        // job id shown in the detail panel
+let FORM_BLOCKED = true;    // missing required fields or a malformed value
+let DTUBE_INVALID = false;  // the server judged d_tube out of range
 
 // ---------------------------------------------------------------- utilities
 async function api(path, opts) {
@@ -187,6 +189,15 @@ function inputFor(field, value) {
   e.className = 'err';
   wrap.appendChild(e);
 
+  // d_tube's valid range depends on the grid and N_LIST, so it gets a live
+  // verdict of its own under the input -- see updateDTubeAsync.
+  if (field.name === 'd_tube') {
+    const c = document.createElement('div');
+    c.className = 'check idle';
+    c.id = 'dtubeCheck';
+    wrap.appendChild(c);
+  }
+
   el.addEventListener('input', onFormChange);
   el.addEventListener('change', onFormChange);
   return wrap;
@@ -317,14 +328,86 @@ function showFieldErrors(errors) {
   }
 }
 
+function applySubmitState() {
+  $('submit').disabled = FORM_BLOCKED || DTUBE_INVALID;
+}
+
 function onFormChange() {
   if (!SCHEMA) return;
   const { params, errors } = collect();
   const missing = SCHEMA.required.filter(
     (f) => params[f.name] === undefined).map((f) => f.name);
-  $('submit').disabled = missing.length > 0 || Object.keys(errors).length > 0;
+  FORM_BLOCKED = missing.length > 0 || Object.keys(errors).length > 0;
+  applySubmitState();
 
   updateEstimateAsync(params);
+  updateDTubeAsync(params, errors);
+}
+
+/* d_tube validity, asked of the server (POST /helpers/d_tube).
+ *
+ * The limit is the solver's own arithmetic -- the tightest gap between
+ * neighbouring microtubules on the first ring -- and the solver does not refuse
+ * a value past it: it silently substitutes the limit. So the check has to be
+ * exact, which is why it is not reimplemented here. Cached and sequence-guarded
+ * like the estimate, since it runs on every keystroke. POST /jobs applies the
+ * same rule, so this is a convenience, not the only line of defence. */
+const dtCache = new Map();
+let dtSeq = 0;
+
+async function fetchDTube(params) {
+  const key = JSON.stringify([params.rg_param, params.ry_param,
+                              params.N_LIST, params.d_tube]);
+  if (dtCache.has(key)) return dtCache.get(key);
+  try {
+    const r = await fetch('helpers/d_tube', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: {
+        rg_param: params.rg_param, ry_param: params.ry_param,
+        N_LIST: params.N_LIST, d_tube: params.d_tube } }),
+    });
+    if (!r.ok) return null;
+    const info = await r.json();
+    dtCache.set(key, info);
+    return info;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function updateDTubeAsync(params, errors) {
+  const box = $('dtubeCheck');
+  if (!box) { DTUBE_INVALID = false; return; }
+  const wrap = box.closest('.field');
+  const seq = ++dtSeq;
+
+  // Not a number: collect() already flags it, and that blocks Queue job.
+  // Left blank, the server default (0) applies, which is always valid.
+  const info = (errors && errors.d_tube)
+    ? { status: 'idle', message: '' }
+    : params.d_tube === undefined
+      ? { status: 'valid', message: 'blank: the default of 0 applies (valid)' }
+      : await fetchDTube(params);
+  if (seq !== dtSeq) return;                   // superseded while in flight
+
+  if (!info) {
+    box.className = 'check idle';
+    box.textContent = 'could not check d_tube; the server will on submit';
+    DTUBE_INVALID = false;
+  } else {
+    DTUBE_INVALID = info.status === 'invalid';
+    box.className = 'check ' + ({ valid: 'ok', invalid: 'bad' }[info.status] || 'idle');
+    box.textContent = (DTUBE_INVALID ? 'Invalid d_tube — ' : '')
+      + info.message
+      + (DTUBE_INVALID ? '. Fix it to enable Queue job.' : '');
+    // d_tube sits under the collapsed Advanced section; open it so the reason
+    // the Queue button is disabled is on screen, not hidden.
+    const details = wrap && wrap.closest('details');
+    if (DTUBE_INVALID && details) details.open = true;
+  }
+  if (wrap) wrap.classList.toggle('dbad', DTUBE_INVALID);
+  applySubmitState();
 }
 
 /* Separate and sequence-guarded: the fetch is async, so a slow reply for an
@@ -358,6 +441,14 @@ async function updateEstimateAsync(params) {
 async function submitJob() {
   const { params, errors } = collect();
   if (Object.keys(errors).length) { showFieldErrors(errors); return; }
+
+  // Re-check d_tube for exactly these parameters rather than trusting a
+  // verdict that may still be in flight from the last keystroke.
+  await updateDTubeAsync(params);
+  if (DTUBE_INVALID) {
+    banner('d_tube is out of range for this grid and N_LIST — see the field.', 'bad');
+    return;
+  }
 
   // Confirm against the figure the user will actually experience -- the shared
   // one when the GPU is already busy, not the solo one.
@@ -621,6 +712,7 @@ async function onComputationChange() {
   const name = $('comp').value;
   showFieldErrors({});
   banner('', '');
+  DTUBE_INVALID = false;
   if (!name) {
     $('form').innerHTML = '';
     $('est').hidden = true;

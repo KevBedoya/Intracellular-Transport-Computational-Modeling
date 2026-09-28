@@ -14,6 +14,7 @@ Endpoints
     GET    /health                liveness + queue counts
     GET    /computations          runnable computation names
     GET    /computations/<name>   parameter schema (drives a UI form)
+    POST   /helpers/d_tube        is a d_tube valid for this grid and N_LIST?
     POST   /jobs                  queue a job -> 201 {job_id}
     GET    /jobs                  list jobs (?status=&limit=)
     GET    /jobs/<id>             one job (accepts an id prefix)
@@ -129,6 +130,7 @@ def index():
             "GET /health": "liveness and queue counts",
             "GET /computations": "runnable computation names",
             "GET /computations/<name>": "parameter schema",
+            "POST /helpers/d_tube": "check d_tube against a grid and N_LIST: {params}",
             "POST /jobs": "queue a job: {computation, params, submitted_by?}",
             "GET /jobs": "list jobs (?status=&limit=)",
             "GET /jobs/<id>": "one job (id or unambiguous prefix)",
@@ -203,6 +205,51 @@ def helper_n_list():
     distinct = len(set(positions)) == len(positions)
     return jsonify({"rays": rays, "tubes": tubes, "N_LIST": positions,
                     "distinct": distinct})
+
+
+@app.post("/helpers/d_tube")
+def helper_d_tube():
+    """Is this d_tube valid for this grid and N_LIST? {params} -> verdict.
+
+    Answers ``{"status": "valid" | "invalid" | "incomplete", "message",
+    "max_d_tube"?}``. "incomplete" means the grid or N_LIST is not yet usable,
+    so there is nothing to judge against -- the form says so rather than
+    guessing. Served for the same reason as /helpers/n_list: the bound is the
+    solver's own arithmetic (computation_router.d_tube_limit), and a copy in
+    the browser would drift from it. POST /jobs applies the same check, so the
+    form cannot be bypassed.
+    """
+    body = request.get_json(silent=True)
+    params = (body or {}).get("params") if isinstance(body, dict) else None
+    if not isinstance(params, dict):
+        return jsonify({"error": "body must be {\"params\": {...}}"}), 400
+
+    def number(key):
+        v = params.get(key)
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    rg, ry, d_tube = number("rg_param"), number("ry_param"), number("d_tube")
+    nlist = params.get("N_LIST")
+    if d_tube is None:
+        return jsonify({"status": "incomplete",
+                        "message": "enter a number to check it"})
+    ok_list = (isinstance(nlist, list) and nlist
+               and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                       and float(x) == int(x) for x in nlist))
+    if (rg is None or ry is None or rg != int(rg) or ry != int(ry)
+            or rg < 2 or ry < 2 or not ok_list
+            or len({int(x) for x in nlist}) != len(nlist)
+            or min(nlist) < 0 or max(nlist) > ry - 1):
+        return jsonify({"status": "incomplete",
+                        "message": "set a valid rg_param, ry_param and N_LIST "
+                                   "to check d_tube against them"})
+
+    from multiprocessing_tools.computation_router import check_d_tube
+
+    verdict = check_d_tube(int(rg), int(ry), [int(x) for x in nlist], d_tube)
+    return jsonify({"status": "valid" if verdict["valid"] else "invalid",
+                    "message": verdict["message"],
+                    "max_d_tube": verdict["max_d_tube"]})
 
 
 @app.post("/jobs")

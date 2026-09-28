@@ -99,10 +99,9 @@ _OPTIONAL_TYPE_OVERRIDES = {
 
 # Characteristic-time computations. t* is the onset of steady exponential decay,
 # which the criterion only accepts if the decay then holds for at least
-# launch.CHAR_TIME_MIN_HOLD (0.1) before T -- so T must exceed that, and in
-# practice the onset itself (typically 0.25-0.45). Mirrored here rather than
-# imported so validation stays free of the solver's numba import.
-_CHAR_TIME_MIN_T = 0.1
+# CHAR_TIME_MIN_HOLD before T -- so T must exceed that, and in practice the
+# onset itself (typically 0.25-0.45).
+_CHAR_TIME_MIN_T = launch.CHAR_TIME_MIN_HOLD
 _CHAR_TIME_COMPUTATIONS = {"Characteristic Time (mass vs v)",
                             "Characteristic Time (a,b grid)"}
 
@@ -151,6 +150,48 @@ def _coerce(value, expected):
     if expected is str:
         return (isinstance(value, str), value)
     return (True, value)
+
+
+def d_tube_limit(rg_param, ry_param, N_LIST):
+    """Largest d_tube the solver will use as given, for this grid and N_LIST.
+
+    d_tube is the width of the diffusive-layer extraction region around each
+    microtubule. The solver only supports regions that do not overlap, so it
+    bounds d_tube by the tightest gap between neighbouring microtubules
+    (``j_max_bef_overlap``) measured on the first ring -- and a value outside
+    ``[0, limit]`` is not refused there but *silently replaced by the limit*
+    (``struct_init.build_d_tube_mapping_no_overlap``). A job submitted with
+    such a value would run, and report, a width nobody asked for.
+
+    Computed with the same two functions and the same arguments as that
+    solver code -- including its radius of 1, which it uses regardless of
+    domain_radius -- so the bound here cannot drift from the one applied.
+    """
+    from computational_tools import supplements as sup
+
+    positions = [int(x) for x in N_LIST]
+    j_sup = sup.j_max_bef_overlap_no_JIT(int(ry_param), positions)
+    return sup.solve_d_rect_no_JIT(1, int(rg_param), int(ry_param), j_sup, 0)
+
+
+def check_d_tube(rg_param, ry_param, N_LIST, d_tube):
+    """Whether ``d_tube`` is valid here, with the bound and a message to show.
+
+    Returns ``{"valid": bool, "max_d_tube": float, "message": str}``. Assumes
+    the grid and N_LIST have themselves been validated.
+    """
+    limit = d_tube_limit(rg_param, ry_param, N_LIST)
+    # Exactly the solver's test, so "valid" means "used as given".
+    valid = not (d_tube < 0 or d_tube > limit)
+    span = (f"[0, {limit:.10g}] for a {int(rg_param)}x{int(ry_param)} grid "
+            f"with {len(N_LIST)} microtubule(s)")
+    if valid:
+        message = f"valid: d_tube={d_tube:g} lies in {span}"
+    else:
+        message = (f"must lie in {span}; beyond that the extraction regions "
+                   f"of neighbouring microtubules would overlap, and the "
+                   f"solver would silently use {limit:.10g} instead")
+    return {"valid": valid, "max_d_tube": float(limit), "message": message}
 
 
 def validate_params(computation_name, params):
@@ -219,6 +260,16 @@ def validate_params(computation_name, params):
             errors["N_LIST"] = "positions must be distinct"
         elif ry is not None and (min(nlist) < 0 or max(nlist) > ry - 1):
             errors["N_LIST"] = f"positions must lie in [0, {ry - 1}] for ry_param={ry}"
+
+    # d_tube can only be judged against a valid grid and N_LIST; when either is
+    # missing or already wrong, that error is the one worth reporting.
+    d_tube = clean.get("d_tube")
+    if (d_tube is not None and rg is not None and ry is not None
+            and isinstance(nlist, list) and nlist
+            and not {"rg_param", "ry_param", "N_LIST"} & set(errors)):
+        verdict = check_d_tube(rg, ry, nlist, d_tube)
+        if not verdict["valid"]:
+            errors["d_tube"] = verdict["message"]
 
     # The (a, b) grid solves the cartesian product of these two, so an empty one
     # would produce no points at all -- and a negative switch rate is not a

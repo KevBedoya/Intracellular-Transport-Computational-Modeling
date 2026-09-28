@@ -69,6 +69,12 @@
   .err { font-size: 11.5px; color: var(--bad); margin-top: 3px; display: none; }
   .field.bad input, .field.bad select { border-color: var(--bad); }
   .field.bad .err { display: block; }
+  .check { font-size: 11.5px; margin-top: 3px; }
+  .check:empty { display: none; }
+  .check.ok  { color: var(--good); }
+  .check.bad { color: var(--bad); font-weight: 600; }
+  .check.idle { color: var(--muted); }
+  .field.dbad input { border-color: var(--bad); }
   button.primary {
     background: var(--accent); color: var(--accent-ink);
     border-color: transparent; font-weight: 600; cursor: pointer; padding: 9px;
