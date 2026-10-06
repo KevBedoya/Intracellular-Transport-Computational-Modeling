@@ -251,14 +251,13 @@ the **onset of steady exponential decay** of the total mass — and reports the
 retained mass `m*` at `t*`.
 
 `t*` is judged from the second derivative of `y = ln(total mass)`: the decay is
-steady where `ln M` is a straight line, i.e. `y'' = 0`. The threshold is applied
-to the normalised curvature `κ = |y''| / y'²` (the rate at which the local
-e-folding time drifts), which is dimensionless, so one `tau` means the same thing
-at every velocity and switch rate. `t*` is the time after which `κ` **stays
-below `tau` for the rest of the solve**, and that steady segment must last at
-least 0.1. Derivatives are taken at a fixed spacing of 1e-3 in time, so `t*` does
-not depend on grid resolution. The fit columns in the CSV are a least-squares line
-through `log10(total mass)` over that steady segment.
+steady where `ln M` is a straight line, i.e. `y'' = 0`. Each sample is marked
+`l(t) = 1` if `|y''(t)| ≤ tau` and `0` otherwise; **sweeping from the right**,
+`t*` is the sample just after the last one with `l = 0`, so `|y''| ≤ tau` from
+`t*` to the end of the run. `y''` is a second-order central difference taken at
+a step of about 1e-4 in time (the double-precision rule of thumb), whatever the
+grid's own sample spacing. The fit columns in the CSV are a least-squares line
+through `log10(total mass)` over `[t*, T]`.
 **Required:** `rg_param`, `ry_param`, `v_LIST` (list[float]), `w_param`, `T_param`, `N_LIST`
 **Optional:** `tau` (default `1e-3`) — the steady-decay threshold; smaller is
 stricter and gives a later `t*`.
@@ -270,16 +269,20 @@ stricter and gives a later `t*`.
   `total_mass_at_t1, total_mass_at_t2` (the mass at its ends) and `tau`
 - `char_t_analysis_plot.png` — `m*` against `v`, log x-axis
 
-> **`T_param` must leave room for the steady decay.** `T ≤ 0.1` is rejected
-> within a second. Above that, the onset is only known after the solve: it is
-> typically 0.25–0.45 at `tau = 1e-3`, so `T` of about 1 is the safe choice. A
-> point whose decay has not settled below `tau` with 0.1 of the record left writes
-> `t_star` and `m_star` as empty fields (NaN) with a warning, and the rest of
-> the sweep is kept.
+> **`T_param` must leave room for the decay to settle.** The onset is only
+> known after the solve. At `v = 1`, 16×16, `tau = 1e-3` it is about 0.5–0.7
+> for fast switching onto the advective layer (`b = 100`), but 2.7–3.8 — or
+> beyond `T = 4` — for `b ≤ 1`, where the decay rate oscillates before
+> settling. A point whose `|y''|` is still above `tau` at the end of the run
+> writes `t_star` and `m_star` as empty fields (NaN) with a warning, and the
+> rest of the sweep is kept; raise `T` or `tau`. The study behind these numbers
+> is in `results/2026-10-05_ab-grid-16x16_tau-mask/`.
 >
-> **This definition replaced an earlier one** (a line through `log10 M` at
-> `t = 0.4` and `t = 0.5`, extrapolated to its intercept, with `m*` read at
-> `10·t*`). Numbers from before the change are not comparable with those after.
+> **This definition replaced two earlier ones**: a line through `log10 M` at
+> `t = 0.4` and `t = 0.5` extrapolated to its intercept, with `m*` read at
+> `10·t*` (before 2026-09-28), and a threshold on `|y''| / y'²` that had to hold
+> for 0.1 (2026-09-28 to 2026-10-05). Numbers from different definitions are
+> not comparable.
 >
 > One velocity per job is the usual choice: a `v_LIST` of five values costs five
 > full solves sequentially inside one job, whereas five separate jobs run four
@@ -337,9 +340,10 @@ curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
 > `workers` when submitting a grid into a busy queue** or it will contend with
 > whatever else is running.
 >
-> The `T_param` rule and the degenerate-point behaviour are the same as for the
-> velocity sweep above: `T ≤ 0.1` is refused, and a point whose decay does not
-> settle records `t_star` and `m_star` as NaN with a warning. A single point at `a_list = b_list = [w]` reproduces
+> The degenerate-point behaviour is the same as for the velocity sweep above:
+> a point whose `|y''|` is still above `tau` at the end of the run records
+> `t_star` and `m_star` as NaN with a warning. With slow switching onto the
+> advective layer (`b ≤ 1`) that needs `T` of about 4. A single point at `a_list = b_list = [w]` reproduces
 > `Characteristic Time (mass vs v)` at that `w` exactly, which is asserted by
 > `tests/test_ab_grid_char_time.py`.
 

@@ -99,11 +99,8 @@ _OPTIONAL_TYPE_OVERRIDES = {
     "d_tube": float,
 }
 
-# Characteristic-time computations. t* is the onset of steady exponential decay,
-# which the criterion only accepts if the decay then holds for at least
-# CHAR_TIME_MIN_HOLD before T -- so T must exceed that, and in practice the
-# onset itself (typically 0.25-0.45).
-_CHAR_TIME_MIN_T = launch.CHAR_TIME_MIN_HOLD
+# Characteristic-time computations: they take tau, the threshold on
+# |d2 ln M/dt2| that locates t* (see the t* criterion block in launch.py).
 _CHAR_TIME_COMPUTATIONS = {"Characteristic Time (mass vs v)",
                             "Characteristic Time (a,b grid)"}
 
@@ -291,12 +288,6 @@ def validate_params(computation_name, params):
             errors[key] = "switch rates must be non-negative"
 
     if computation_name in _CHAR_TIME_COMPUTATIONS:
-        t = clean.get("T_param")
-        if t is not None and t <= _CHAR_TIME_MIN_T:
-            errors["T_param"] = (
-                f"must exceed {_CHAR_TIME_MIN_T} for this computation: the "
-                f"steady decay must hold for at least {_CHAR_TIME_MIN_T} after "
-                f"t*, which itself is typically 0.25-0.45")
         tau = clean.get("tau")
         if tau is not None and not tau > 0:
             errors["tau"] = "must be a positive threshold"

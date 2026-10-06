@@ -161,10 +161,10 @@ currently too tedious to do casually.
   rather than guess when a value will not coerce.
 - **Force `show_plt: false`.** It is a desktop-GUI setting that tries to open a
   plot window on the server. Do not expose it as a checkbox; set it and hide it.
-- **Warn on short `T` for the characteristic-time computations.** `T ≤ 0.1`
-  is rejected server-side (the steady decay must hold for 0.1 after t*), and
-  since t* itself is typically 0.25-0.45, anything under ~0.6 is likely to come
-  back NaN. Say so in the form instead of making the user learn it from a job.
+- **Warn on short `T` for the characteristic-time computations.** t* is
+  where |y''| of ln M settles below tau for good, which is about 0.5-0.7 for
+  b = 100 but 2.7-3.8 or later for b <= 1. A T too short for the pair comes
+  back NaN; say so in the form instead of making the user learn it from a job.
 - **Surface the NaN case honestly.** A point whose decay never settles below
   `tau` within `T` records `t_star` and `m_star` as NaN. Render that as "no
   steady decay within T" rather than a blank cell that looks like a bug.

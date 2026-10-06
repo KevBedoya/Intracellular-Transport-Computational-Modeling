@@ -380,9 +380,10 @@ Two independent wins, neither large in absolute terms:
   capacity.
 * **The timeseries should stay float64.** This used to read "could be
   float32", when they fed a two-point log-linear fit insensitive at 1e-7. t*
-  is now located from a second difference of ln M (see `_char_time_onset` in
-  `launch.py`), and at float32 precision the noise floor of the normalised
-  curvature it thresholds is ~1e-2 -- above the default tau of 1e-3.
+  is now located from a second difference of ln M at a step of ~1e-4 (see
+  `_char_time_onset` in `launch.py`). Rounding in that difference is about
+  eps*|ln M|/h^2: ~1e-7 in float64, but ~30 in float32 -- far above the
+  default tau of 1e-3.
 
 ---
 

@@ -1073,50 +1073,44 @@ def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
 
 # v------------------------------ The t* criterion ------------------------------v
 #
-# t* is the onset of steady exponential decay: the earliest time after which
-# log(total mass) is a straight line in t, judged by its second derivative.
+# t* is the onset of steady exponential decay: the time from which ln(total
+# mass) stays a straight line to the end of the solve, judged by its second
+# derivative.
 #
-# WHAT IS MEASURED. With y(t) = ln M(t), the local decay rate is
-# lambda(t) = -y'(t), and the curve is a straight line exactly where y'' = 0.
-# The raw y'' is not thresholded, though, because its size scales with the
-# decay rate itself -- which varies by more than a factor of two across an
-# (a, b) grid -- so one threshold would mean a different thing at every point.
-# Instead the criterion uses the normalised curvature
+# THE RULE. With y(t) = ln M(t) and y'' its second-order central difference,
+# mark each sample
 #
-#     kappa(t) = |y''| / (y')**2  =  |d/dt (1 / lambda)|,
+#     l(t) = 1  if |y''(t)| <= tau,   0 otherwise.
 #
-# the rate at which the local e-folding time drifts. It is dimensionless, is
-# independent of the decay rate and (with the natural log) of the log base, and
-# tends to zero exactly as the solution collapses onto its slowest eigenmode.
+# Sweeping from the right, t^ is the last sample with l = 0 -- the latest time
+# y'' is still larger than tau -- and t* is the sample immediately after it,
+# so |y''| <= tau from t* to the end of the run. If the final judged sample
+# already has l = 0, the run ended before the decay settled and there is no t*.
 #
-# WHY "STAYS BELOW" AND NOT A SLIDING WINDOW. A window of fixed length that
-# asks "is y'' small throughout?" can be fooled by an inflection, where y''
-# passes through zero, or by a slow transient that is locally flat. The regime
-# the definition is after -- single-mode decay -- is the only one in which
-# kappa stays small for the rest of the solve, so that is the test: t* is where
-# kappa drops below tau for the last time, and the record must then continue
-# for at least CHAR_TIME_MIN_HOLD beyond it for the run to count. That needs no
-# window width, and it is O(n).
+# Why from the right rather than "first time below tau": y'' can pass through
+# zero on its way somewhere else -- at an inflection, or in the damped
+# oscillation of the decay rate seen for slow switching onto the advective
+# layer (b <= 1) -- so the first time it is small is not when it stays small.
+# Only the tail tells you that. The study behind this choice is in
+# results/2026-10-05_ab-grid-16x16_tau-mask/.
 #
-# WHY A FIXED DIFFERENCING SPACING. The derivatives are taken on the timeseries
-# decimated to CHAR_TIME_DIFF_SPACING, not at the raw sample spacing. Roundoff
-# in a second difference grows as 1/h**2, and h shrinks with the grid: at the
-# raw spacing of a 160x160 run the noise floor in kappa is ~1e-1, larger than
-# any useful tau. At 1e-3 it is ~1e-9 on every grid, while the curvature being
-# measured varies on a timescale of ~0.05, so the spacing costs no accuracy.
+# THE STEP. y'' is (y[i+s] - 2 y[i] + y[i-s]) / H^2 with H = s * sample_dt as
+# close as possible to CHAR_TIME_DIFF_SPACING = 1e-4, the double-precision
+# rule of thumb (~eps^(1/4)) for a second difference. Rounding grows as 1/H^2
+# and the sample spacing shrinks with the grid, so differencing adjacent
+# samples on a fine grid would bury y'' in noise; at H ~ 1e-4 the noise in y''
+# is ~1e-7 to 1e-6, far below any useful tau. t* is reported at that sample
+# resolution, not interpolated.
 #
-# The three constants below are fixed rather than exposed, like the fit window
-# they replace: they are part of the definition of t*, and both kernels read
-# them from here so they cannot drift apart. tau is the one knob, exposed on
-# both kernels with CHAR_TIME_TAU as its default.
+# tau is the one knob, exposed on both kernels with CHAR_TIME_TAU as its
+# default; the spacing is part of the definition and read from here by both.
 CHAR_TIME_TAU = 1e-3
-CHAR_TIME_DIFF_SPACING = 1e-3
-CHAR_TIME_MIN_HOLD = 0.1
+CHAR_TIME_DIFF_SPACING = 1e-4
 
 # The per-point result columns both kernels write, in order, after their own
 # leading parameter column(s). One list so the two CSVs stay concatenable.
-# fit_window_t1/_t2 are the detected steady segment [t*, t_end] -- no longer a
-# fixed window -- and total_mass_at_t1/_t2 the mass at its two ends.
+# fit_window_t1/_t2 are the detected steady segment [t*, t_end] and
+# total_mass_at_t1/_t2 the mass at its two ends.
 CHAR_TIME_RESULT_COLUMNS = ("t_star", "m_star", "fit_slope", "fit_intercept",
                             "fit_window_t1", "fit_window_t2",
                             "total_mass_at_t1", "total_mass_at_t2", "tau")
@@ -1127,29 +1121,24 @@ def _char_time_preflight(T_param, MA_collection_factor, relative_k, tau):
 
     Pre-flight and cheap: it runs before the time-stepping loop, which at
     160x160 means days, so a hopeless parameter set fails in a second rather
-    than after the solve.
-
-    Where the onset falls is only known after the solve, so this can only rule
-    out what is certain to fail: a non-positive tau, or a record too short to
-    hold the CHAR_TIME_MIN_HOLD tail that the criterion demands after t*. A run
-    that passes may still find no onset within T -- that is reported as a
-    degenerate point after the solve, not raised.
+    than after the solve. Where the onset falls is only known afterwards, so
+    this rules out only what is certain to fail: a non-positive tau, or a
+    record too short to take a second difference over. A run that passes may
+    still find no t* within T -- that is reported as a degenerate point after
+    the solve, not raised.
     """
     if not (np.isfinite(tau) and tau > 0):
         raise ValueError(f"tau must be a positive number (got tau={tau})")
-    if T_param <= CHAR_TIME_MIN_HOLD or relative_k < 8:
+    if T_param <= 0 or relative_k < 8:
         raise ValueError(
             f"T_param={T_param} is too short for a characteristic time: the "
-            f"criterion needs the steady decay to hold for at least "
-            f"CHAR_TIME_MIN_HOLD={CHAR_TIME_MIN_HOLD} after t*, so T_param "
-            f"must exceed {CHAR_TIME_MIN_HOLD} (and in practice the onset "
-            f"itself, typically 0.25-0.45).")
+            f"mass timeseries has {relative_k} samples, fewer than the 8 a "
+            f"second difference needs.")
 
 
 def _char_time_onset(total_mass, sample_dt, tau=CHAR_TIME_TAU,
-                     spacing=CHAR_TIME_DIFF_SPACING,
-                     min_hold=CHAR_TIME_MIN_HOLD):
-    """t* from a total-mass timeseries, by the criterion described above.
+                     spacing=CHAR_TIME_DIFF_SPACING):
+    """t* from a total-mass timeseries, by the right-sweep rule described above.
 
     ``total_mass[i]`` is the mass at time ``i * sample_dt``. Pure numpy and
     free of solver state, so it is tested directly against analytic curves in
@@ -1157,20 +1146,16 @@ def _char_time_onset(total_mass, sample_dt, tau=CHAR_TIME_TAU,
 
     Returns a dict of plain floats:
 
-      * ``t_star`` -- the onset, interpolated between the two decimated samples
-        where kappa crosses tau (log-linearly in kappa, which decays roughly
-        exponentially), so it varies continuously with the parameters rather
-        than in steps of ``spacing``;
+      * ``t_star`` -- the first sample after the last one with |y''| > tau;
       * ``m_star`` -- the total mass at t*;
       * ``fit_slope``, ``fit_intercept`` -- the least-squares line through
-        log10(total mass) over the steady segment [t*, t_end], in the same
-        units the old two-point fit reported;
+        log10(total mass) over the steady segment [t*, t_end];
       * ``fit_window_t1``, ``fit_window_t2`` -- that segment's ends;
       * ``total_mass_at_t1``, ``total_mass_at_t2`` -- the mass at each end.
 
-    Every entry is NaN when no onset is found -- kappa never settles below tau,
-    or settles too late to hold for ``min_hold``. That is the degenerate case;
-    the caller reports it.
+    Every entry is NaN when there is no t* -- |y''| is still above tau at the
+    last judged sample, i.e. the run ended before the decay settled. That is
+    the degenerate case; the caller reports it.
     """
     nan = float("nan")
     degenerate = dict(t_star=nan, m_star=nan, fit_slope=nan, fit_intercept=nan,
@@ -1184,58 +1169,36 @@ def _char_time_onset(total_mass, sample_dt, tau=CHAR_TIME_TAU,
     if bad.size:
         mass = mass[:bad[0]]
 
-    stride = max(1, int(round(spacing / sample_dt)))
-    coarse = mass[::stride]
-    h = stride * sample_dt
-    if coarse.size < 5:
+    s = max(1, int(round(spacing / sample_dt)))
+    H = s * sample_dt
+    n = mass.size
+    if n < 2 * s + 2:
         return degenerate
 
-    t = np.arange(coarse.size) * h
-    y = np.log(coarse)
-    dy = np.gradient(y, h)
-    d2y = np.gradient(dy, h)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        kappa = np.abs(d2y) / dy ** 2
+    t = np.arange(n) * sample_dt
+    y = np.log(mass)
+    # Second difference at every sample with a neighbour s away on both sides;
+    # the first and last s samples are not judged.
+    d2y = (y[2 * s:] - 2.0 * y[s:-s] + y[:-2 * s]) / H ** 2
+    judged = np.arange(s, n - s)
 
-    # np.gradient is one-sided at the ends, and the second pass compounds it,
-    # so the first and last two samples are not judged.
-    judged = slice(2, coarse.size - 2)
-    k = kappa[judged]
-    # Non-finite kappa (y' = 0 at the very start, before any mass has left)
-    # counts as "not yet straight", which is what it is.
-    over = ~(np.isfinite(k) & (k <= tau))
-    if over.all():
-        return degenerate
+    over = ~(np.abs(d2y) <= tau)          # l = 0; a non-finite y'' counts too
+    if over[-1]:
+        return degenerate                 # still above tau when the run ends
     if over.any():
-        last = judged.start + int(np.nonzero(over)[0][-1])
-        onset = last + 1
-        k0, k1 = kappa[last], kappa[onset]
-        if np.isfinite(k0) and k0 > tau and 0 < k1 <= tau:
-            frac = (np.log(k0) - np.log(tau)) / (np.log(k0) - np.log(k1))
-        else:
-            frac = 1.0
-        t_star = t[last] + frac * h
+        onset = int(judged[np.nonzero(over)[0][-1] + 1])
     else:
-        # Already settled at the first judged sample.
-        onset = judged.start
-        t_star = t[onset]
+        onset = int(judged[0])            # never above tau
+    t_star = float(t[onset])
 
-    t_end = t[coarse.size - 1]
-    if t_end - t_star < min_hold:
-        return degenerate
+    m_star = float(mass[onset])
+    slope, intercept = np.polyfit(t[onset:], np.log10(mass[onset:]), 1)
 
-    # m* at t*, from the full-resolution series rather than the decimated one.
-    fine_t = np.arange(mass.size) * sample_dt
-    m_star = float(np.exp(np.interp(t_star, fine_t, np.log(mass))))
-
-    seg = slice(onset, coarse.size)
-    slope, intercept = np.polyfit(t[seg], np.log10(coarse[seg]), 1)
-
-    return dict(t_star=float(t_star), m_star=m_star,
+    return dict(t_star=t_star, m_star=m_star,
                 fit_slope=float(slope), fit_intercept=float(intercept),
-                fit_window_t1=float(t_star), fit_window_t2=float(t_end),
+                fit_window_t1=t_star, fit_window_t2=float(t[-1]),
                 total_mass_at_t1=m_star,
-                total_mass_at_t2=float(coarse[-1]))
+                total_mass_at_t2=float(mass[-1]))
 # ^------------------------------ The t* criterion ------------------------------^
 
 
@@ -1301,9 +1264,8 @@ def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
         print("*** WARNING: no steady exponential decay found ***")
         print(f"    point      = {label or tag}")
         print(f"    tau        = {tau}")
-        print(f"    the normalised curvature |y''|/y'^2 of y = ln(total mass) "
-              f"did not settle below tau with at least "
-              f"{CHAR_TIME_MIN_HOLD} of the record left (T_param={T_param}).")
+        print(f"    |d2 ln(total mass)/dt2| was still above tau at the end "
+              f"of the run (T_param={T_param}).")
         print("    recording t_star = m_star = NaN; raise T_param or tau.")
 
     # The fit over the steady segment is recorded, not only t*: its slope is
@@ -1321,8 +1283,8 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     """m* and t* against velocity, at a single mutual switch rate a = b = w.
 
     t* is the onset of steady exponential decay of the total mass and m* the
-    mass remaining at t*; ``tau`` is the threshold on the normalised curvature
-    of ln(total mass) that decides it. See the block above _char_time_onset.
+    mass remaining at t*; ``tau`` is the threshold on |d2 ln(total mass)/dt2|
+    that decides it. See the block above _char_time_onset.
     """
 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)

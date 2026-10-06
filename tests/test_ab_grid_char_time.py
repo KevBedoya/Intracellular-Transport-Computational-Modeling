@@ -48,10 +48,9 @@ from launch_functions import launch                            # noqa: E402
 from system_configuration import file_paths as fp              # noqa: E402
 
 RG = RY = 16
-# Long enough for every point tested here to reach steady decay and hold it
-# for CHAR_TIME_MIN_HOLD: these runs find t* between about 0.31 and 0.37 at the
-# default tau. Chosen so the tests compare real numbers rather than agreeing on
-# NaN.
+# Long enough for every point tested here (v = 100, switch rates >= 1) to
+# settle below the default tau before the run ends. Chosen so the tests compare
+# real numbers rather than agreeing on NaN.
 T = 1.0
 N_LIST = np.array([0, 4, 8, 12], dtype=np.int64)
 V = 100.0
@@ -73,12 +72,13 @@ RESULT_COLUMNS = ("t_star", "m_star", "fit_slope", "fit_intercept",
 GPU_TOLERANCE = 1e-9
 
 # Looser for the columns located by the steady-decay criterion (t* and the
-# masses read at it), because locating t* is ill-conditioned by construction:
-# it reads a second difference of ln M at spacing 1e-3, which turns a ~1e-14
-# disagreement in M into ~1e-9 in kappa, and t* moves by dkappa / |dkappa/dt|
-# with kappa ~ tau and |dln kappa/dt| ~ 45. That bounds the relative error in
-# t* near 1e-7; measured on these grids it is ~3e-9.
-GPU_ONSET_TOLERANCE = 1e-6
+# masses read at it). t* is a sample time -- the first sample after the last
+# |y''| > tau -- and y'' is a second difference at H ~ 1e-4, which turns a
+# ~1e-14 disagreement in M into ~1e-6 in y''. Should a sample sit that close to
+# tau, the two devices put t* one sample apart: 1.5e-4 here, i.e. up to ~1.5e-3
+# relative for t* >= 0.1, and a mass that differs by lambda * 1.5e-4 ~ 1e-3.
+# Usually they agree exactly; this bounds the case where they do not.
+GPU_ONSET_TOLERANCE = 2e-3
 ONSET_COLUMNS = {"t_star", "m_star", "fit_window_t1", "total_mass_at_t1"}
 
 
@@ -255,9 +255,9 @@ def test_invalid_input_is_refused():
     cases = [
         (dict(a_list=[], b_list=[1.0]), "at least one"),
         (dict(a_list=[1.0], b_list=[]), "at least one"),
-        # The steady decay must hold for CHAR_TIME_MIN_HOLD after t*, so a
-        # record no longer than that cannot yield one.
-        (dict(a_list=[1.0], b_list=[1.0], T_param=0.05), "too short"),
+        # Too few samples to take a second difference over: 1e-3 is fewer than
+        # eight samples at 16x16, refused before any solving.
+        (dict(a_list=[1.0], b_list=[1.0], T_param=1e-3), "too short"),
         (dict(a_list=[1.0], b_list=[1.0], tau=0.0), "tau must be"),
         (dict(a_list=[1.0], b_list=[1.0], device="cuda:0"), "unknown device"),
     ]
