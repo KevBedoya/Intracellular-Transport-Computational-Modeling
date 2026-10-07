@@ -20,12 +20,27 @@ from launch_functions import launch as L
 
 SP = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(R, "results", "2026-10-07_ab-grid-96x96_tau0.01", "line_intercept_criterion")
+SUB_ROOT = os.path.join(R, "results", "2026-10-07_ab-grid-96x96_tau0.01")
+SUB_LEAF = "line_intercept_criterion"
 os.makedirs(OUT, exist_ok=True)
 
 G, MCF, T = 96, 5, 1.0
 X1, X2 = 0.4, 0.5
 A = B = [0.1, 1.0, 10.0, 100.0]
 EXCLUDED = {(10.0, 0.1), (10.0, 1.0), (1.0, 0.1), (1.0, 1.0), (0.1, 0.1), (0.1, 1.0)}
+
+# "additional" mode: the six pairs studied to T = 4 at 16x16 instead, into a
+# subfolder; the ten main pairs become the blank panels.
+MODE = next((x for x in sys.argv[1:] if x in ("main", "additional")), "main")
+T4_PAIRS = set(EXCLUDED)
+if MODE == "additional":
+    EXCLUDED = {(x, z) for x in A for z in B} - T4_PAIRS
+    OUT = os.path.join(SUB_ROOT, "additional_pairs", SUB_LEAF)
+    os.makedirs(OUT, exist_ok=True)
+BLANK_LABEL = ("excluded\n(T = 4 pair)" if MODE == "main"
+               else "in parent folder\n(main T = 1 pair)")
+BLANK_NOTE = ("blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
+              else "the six pairs studied to T = 4 at 16x16 (this run: T = 1); blank: main pairs")
 
 h = MCF * L.num.compute_dT(G, G)
 i1 = L.num.closest_multiple(L.num.compute_K(G, G, X1), MCF) // MCF
@@ -93,7 +108,7 @@ for name, zoom, extra in [("lnM_line_intercept_96x96.png", False, ""),
             ax = axes[i, j]
             if (a, b) in EXCLUDED:
                 ax.set_axis_off()
-                ax.text(0.5, 0.5, f"a={a:g}, b={b:g}\nexcluded\n(T = 4 pair)", ha="center",
+                ax.text(0.5, 0.5, f"a={a:g}, b={b:g}\n" + BLANK_LABEL, ha="center",
                         va="center", fontsize=9, color="0.5", transform=ax.transAxes)
                 continue
             panel(ax, (a, b), zoom)
@@ -101,7 +116,9 @@ for name, zoom, extra in [("lnM_line_intercept_96x96.png", False, ""),
             ax.set_title(title((a, b)), fontsize=9)
             ax.set_xlabel("t")
             ax.set_ylabel(r"$\ln M(t)$")
-    axes[3, 3].legend(fontsize=7, loc="lower left")
+    first = (3, 3) if MODE == "main" else next(
+        (i, j) for i, x in enumerate(A) for j, z in enumerate(B) if (x, z) not in EXCLUDED)
+    axes[first].legend(fontsize=7, loc="lower left")
     fig.suptitle(f"ln M(t), 96x96, v=1, N=4, T=1{extra}\n"
                  r"original criterion: line through $\log_{10}M$ at t = 0.4, 0.5 (blue dashed, "
                  r"points); red: t* where it reaches $M$ = 1 ($\ln M$ = 0)", fontsize=11)

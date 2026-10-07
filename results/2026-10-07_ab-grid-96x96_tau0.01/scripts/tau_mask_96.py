@@ -23,14 +23,28 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from launch_functions import launch as L
 
-TAU = float(sys.argv[1]) if len(sys.argv) > 1 else 1e-2
+TAU = float(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] not in ("main", "additional") else 1e-2
 SP = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(R, "results", f"2026-10-07_ab-grid-96x96_tau{TAU:g}")
+SUB_ROOT, SUB_LEAF = OUT, ""
 os.makedirs(OUT, exist_ok=True)
 
 G, MCF, T = 96, 5, 1.0
 A = B = [0.1, 1.0, 10.0, 100.0]
 EXCLUDED = {(10.0, 0.1), (10.0, 1.0), (1.0, 0.1), (1.0, 1.0), (0.1, 0.1), (0.1, 1.0)}
+
+# "additional" mode: the six pairs studied to T = 4 at 16x16 instead, into a
+# subfolder; the ten main pairs become the blank panels.
+MODE = next((x for x in sys.argv[1:] if x in ("main", "additional")), "main")
+T4_PAIRS = set(EXCLUDED)
+if MODE == "additional":
+    EXCLUDED = {(x, z) for x in A for z in B} - T4_PAIRS
+    OUT = os.path.join(SUB_ROOT, "additional_pairs", SUB_LEAF)
+    os.makedirs(OUT, exist_ok=True)
+BLANK_LABEL = ("excluded\n(T = 4 pair)" if MODE == "main"
+               else "in parent folder\n(main T = 1 pair)")
+BLANK_NOTE = ("blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
+              else "the six pairs studied to T = 4 at 16x16 (this run: T = 1); blank: main pairs")
 
 h = MCF * L.num.compute_dT(G, G)
 s = max(1, int(round(L.CHAR_TIME_DIFF_SPACING / h)))
@@ -120,7 +134,7 @@ def d2_panel(ax, k, lim):
 
 NOTE = (rf"red: t* = sample after the last $|y''| > \tau$ = {TAU:g} (right sweep);  "
         rf"$y''$ = central difference of $\ln M$, H = {H:.3g};  "
-        r"blank: pairs studied to T = 4 at 16x16, excluded")
+        + BLANK_NOTE)
 figs = [(f"lnM_96x96_tau{TAU:g}.png", r"$\ln M(t)$", lnm_panel, None, ""),
         (f"second_derivative_96x96_tau{TAU:g}.png", r"$d^2\ln M/dt^2$", d2_panel, None, ""),
         (f"lnM_96x96_tau{TAU:g}_zoom.png", r"$\ln M(t)$", lnm_zoom_panel, False,
@@ -140,7 +154,7 @@ for name, ylab, panel, lim, extra in figs:
             ax = axes[i, j]
             if (a, b) in EXCLUDED:
                 ax.set_axis_off()
-                ax.text(0.5, 0.5, f"a={a:g}, b={b:g}\nexcluded\n(T = 4 pair)",
+                ax.text(0.5, 0.5, f"a={a:g}, b={b:g}\n" + BLANK_LABEL,
                         ha="center", va="center", fontsize=9, color="0.5",
                         transform=ax.transAxes)
                 continue

@@ -34,9 +34,24 @@ A line through log10 M at t = 0.4 and t = 0.5, extended to M = 1
 `_zoom.png` (t* ± 0.15, ln M in [−0.5, 0.5]); table in
 `t_star_line_intercept_96x96.csv`.
 
+## `additional_pairs/` — the six T = 4 pairs, at T = 1
+
+The same analysis (both criteria, same file names) for (10, 0.1), (10, 1),
+(1, 0.1), (1, 1), (0.1, 0.1), (0.1, 1), from the same job's T = 1 series;
+the ten main pairs are the blank panels there.
+
+- Right-sweep mask, τ = 0.01: **no t\* for any of the six** — |y″| is still
+  far above τ at T = 1 (the curves oscillate through zero and are still
+  0.15 to beyond 0.3 in magnitude at the end). At 16×16 these needed T = 4;
+  at 96×96 they need a longer run as well.
+- Line intercept: t\* = 0.079 / 0.079 / 0.068 / 0.071 for (0.1, 0.1),
+  (0.1, 1), (1, 0.1), (1, 1), and negative (−0.027, −0.002) for (10, 0.1),
+  (10, 1).
+
 ## Reproducing
 
-`scripts/tau_mask_96.py [tau]` and `scripts/line_intercept_96.py` expect the
-ten `tm_a{a}_b{b}.dat` files (download from
+`scripts/tau_mask_96.py [tau] [main|additional]` and
+`scripts/line_intercept_96.py [main|additional]` expect the
+`tm_a{a}_b{b}.dat` files (download from
 `/jobs/0b8d4022/outputs/checkpoints/ab_grid_char_time_a{a}_b{b}/timeseries_4.dat`)
 next to the script.
