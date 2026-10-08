@@ -35,15 +35,19 @@ EXCLUDED = {(10.0, 0.1), (10.0, 1.0), (1.0, 0.1), (1.0, 1.0), (0.1, 0.1), (0.1, 
 
 # "additional" mode: the six pairs studied to T = 4 at 16x16 instead, into a
 # subfolder; the ten main pairs become the blank panels.
-MODE = next((x for x in sys.argv[1:] if x in ("main", "additional")), "main")
+# "all" (default): all sixteen pairs. "main" / "additional": the earlier split.
+MODE = next((x for x in sys.argv[1:] if x in ("all", "main", "additional")), "all")
 T4_PAIRS = set(EXCLUDED)
 if MODE == "additional":
     EXCLUDED = {(x, z) for x in A for z in B} - T4_PAIRS
     OUT = os.path.join(SUB_ROOT, "additional_pairs", SUB_LEAF)
     os.makedirs(OUT, exist_ok=True)
+if MODE == "all":
+    EXCLUDED = set()          # every pair, no blank panels
 BLANK_LABEL = ("excluded\n(T = 4 pair)" if MODE == "main"
                else "in parent folder\n(main T = 1 pair)")
-BLANK_NOTE = ("blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
+BLANK_NOTE = ("all 16 (a, b) pairs" if MODE == "all"
+              else "blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
               else "the six pairs studied to T = 4 at 16x16 (this run: T = 1); blank: main pairs")
 
 h = MCF * L.num.compute_dT(G, G)
@@ -120,6 +124,17 @@ def lnm_zoom_panel(ax, k, clip):
     ax.axhline(yc, color="red", lw=0.6, ls=":")
 
 
+def step_label(ax):
+    """The finite-difference step, in the panel corner."""
+    ax.text(0.98, 0.04, f"h = {H:.4e}", transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=7, color="0.2",
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="0.7", alpha=0.85))
+
+
+STEP_LINE = (rf"finite-difference step h = {H:.6e}  (= {s} samples $\times$ {h:.6e}, the "
+             rf"solver's sample spacing $5\,\Delta t$)")
+
+
 def d2_panel(ax, k, lim):
     t, _, q, ts = data[k]
     ax.plot(t, q, lw=1.0, color="C2")
@@ -130,6 +145,7 @@ def d2_panel(ax, k, lim):
         ax.set_ylim(-lim, lim)
         for v in (-TAU, TAU):
             ax.axhline(v, color="0.4", lw=0.8, ls=":")
+    step_label(ax)
 
 
 NOTE = (rf"red: t* = sample after the last $|y''| > \tau$ = {TAU:g} (right sweep);  "
@@ -167,7 +183,10 @@ for name, ylab, panel, lim, extra in figs:
             if j == 0 or (i, j - 1) in [(A.index(x), B.index(y)) for x, y in EXCLUDED]:
                 ax.set_ylabel(ylab)
             ax.tick_params(labelbottom=True)
-    fig.suptitle(f"{ylab}, 96x96, v=1, N=4, T=1{extra}\n{NOTE}", fontsize=11)
+    head = f"{ylab}, 96x96, v=1, N=4, T=1{extra}"
+    if panel is d2_panel:
+        head += "\n" + STEP_LINE
+    fig.suptitle(f"{head}\n{NOTE}", fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, name), dpi=110)
     plt.close(fig)

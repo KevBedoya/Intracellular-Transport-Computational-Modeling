@@ -31,15 +31,19 @@ EXCLUDED = {(10.0, 0.1), (10.0, 1.0), (1.0, 0.1), (1.0, 1.0), (0.1, 0.1), (0.1, 
 
 # "additional" mode: the six pairs studied to T = 4 at 16x16 instead, into a
 # subfolder; the ten main pairs become the blank panels.
-MODE = next((x for x in sys.argv[1:] if x in ("main", "additional")), "main")
+# "all" (default): all sixteen pairs. "main" / "additional": the earlier split.
+MODE = next((x for x in sys.argv[1:] if x in ("all", "main", "additional")), "all")
 T4_PAIRS = set(EXCLUDED)
 if MODE == "additional":
     EXCLUDED = {(x, z) for x in A for z in B} - T4_PAIRS
     OUT = os.path.join(SUB_ROOT, "additional_pairs", SUB_LEAF)
     os.makedirs(OUT, exist_ok=True)
+if MODE == "all":
+    EXCLUDED = set()          # every pair, no blank panels
 BLANK_LABEL = ("excluded\n(T = 4 pair)" if MODE == "main"
                else "in parent folder\n(main T = 1 pair)")
-BLANK_NOTE = ("blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
+BLANK_NOTE = ("all 16 (a, b) pairs" if MODE == "all"
+              else "blank: pairs studied to T = 4 at 16x16, excluded" if MODE == "main"
               else "the six pairs studied to T = 4 at 16x16 (this run: T = 1); blank: main pairs")
 
 h = MCF * L.num.compute_dT(G, G)
@@ -116,7 +120,7 @@ for name, zoom, extra in [("lnM_line_intercept_96x96.png", False, ""),
             ax.set_title(title((a, b)), fontsize=9)
             ax.set_xlabel("t")
             ax.set_ylabel(r"$\ln M(t)$")
-    first = (3, 3) if MODE == "main" else next(
+    first = (3, 3) if MODE in ("main", "all") else next(
         (i, j) for i, x in enumerate(A) for j, z in enumerate(B) if (x, z) not in EXCLUDED)
     axes[first].legend(fontsize=7, loc="lower left")
     fig.suptitle(f"ln M(t), 96x96, v=1, N=4, T=1{extra}\n"
