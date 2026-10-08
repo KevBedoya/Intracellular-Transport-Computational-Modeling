@@ -180,6 +180,9 @@ class ComputationMixin:
             self.output_display.append(
                 f"Dimensionless time duration: {result['duration']:.6f}      [{self.produce_timestamp()}]")
 
+        for line in aux_gui_funcs.char_time_lines(result):
+            self.output_display.append(line)
+
         csv_paths = []
         png_paths = []
 

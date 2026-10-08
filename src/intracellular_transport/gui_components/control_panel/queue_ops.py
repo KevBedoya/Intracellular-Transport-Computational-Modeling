@@ -243,6 +243,8 @@ class QueueMixin:
                 if job.duration:
                     self.output_display.append(
                         f"Dimensionless time: {job.duration}:.6f     [{self.produce_timestamp()}]")
+                for line in aux_gui_funcs.char_time_lines(result):
+                    self.output_display.append(line)
 
                 if job.csv_files or job.png_files:
                     self.output_files_widget.update_display(job.csv_files, job.png_files)

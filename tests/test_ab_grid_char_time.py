@@ -250,6 +250,50 @@ def test_t_star_is_the_onset_of_steady_decay():
     assert 0 < strict["m_star"] < loose["m_star"] < 1
 
 
+def test_router_result_reaches_the_gui_and_the_api():
+    """Both computations, run the way the desktop app and the job worker run them.
+
+    The router turns each kernel's return value into
+    {output_dirs, csv, tau, t_star: [...]}: output_dirs is what the GUI lists
+    and previews, t_star what it prints and what an API job stores. The
+    velocity sweep used to return None, which crashed the GUI's result handler
+    (``"MFPT" in None``); the job queue did not know either computation at all.
+    """
+    import json
+    from multiprocessing_tools import computation_router as router
+    from gui_components import aux_gui_funcs, controller
+
+    # The queue path is the router now, not a drifting copy of it.
+    assert controller.run_selected_computation is router.run_selected_computation
+    assert "Characteristic Time (mass vs v)" in controller.COMPUTATION_FUNCTIONS
+    assert "Characteristic Time (a,b grid)" in controller.COMPUTATION_FUNCTIONS
+
+    # Text values, as the GUI's form fields supply them.
+    common = dict(rg_param=str(RG), ry_param=str(RY), T_param=str(T),
+                  N_LIST=str(N_LIST.tolist()), show_plt="False")
+    sweep = router.run_selected_computation(
+        "Characteristic Time (mass vs v)",
+        dict(common, v_LIST=f"[{V}]", w_param="10.0"))
+    grid = router.run_selected_computation(
+        "Characteristic Time (a,b grid)",
+        dict(common, a_list="[1.0, 10.0]", b_list="[10.0]", v_param=str(V),
+             workers="1", tau="0.01"))
+
+    for result, keys, n in ((sweep, ("v",), 1), (grid, ("a", "b"), 2)):
+        json.dumps(result)                       # stored as JSON by the worker
+        assert os.path.isdir(result["output_dirs"][0])
+        csvs, pngs = aux_gui_funcs.extract_csv_and_png_paths(result["output_dirs"])
+        assert csvs and pngs, "the GUI would find nothing to list or preview"
+        assert len(result["t_star"]) == n
+        for row in result["t_star"]:
+            assert all(k in row for k in keys)
+            assert row["t_star"] is None or 0 < row["t_star"] < T
+        lines = aux_gui_funcs.char_time_lines(result)
+        assert len(lines) == n + 1 and "t*" in lines[1], lines
+    assert grid["tau"] == 0.01 and sweep["tau"] == launch.CHAR_TIME_TAU
+    assert [(r["a"], r["b"]) for r in grid["t_star"]] == [(1.0, 10.0), (10.0, 10.0)]
+
+
 def test_invalid_input_is_refused():
     """Bad parameters must raise before any solving, not produce nonsense."""
     cases = [

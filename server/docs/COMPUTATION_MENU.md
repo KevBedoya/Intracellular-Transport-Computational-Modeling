@@ -262,7 +262,10 @@ through `log10(total mass)` over `[t*, T]`.
 **Optional:** `tau` (default `1e-3`) — the steady-decay threshold; smaller is
 stricter and gives a later `t*`.
 `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
-**Output:** `char_time_analysis/<timestamp>/`
+**Output:** `char_time_analysis/<timestamp>/`, and a job `result` of
+`{"output_dirs": [...], "csv": ..., "tau": ..., "t_star": [{"v", "t_star", "m_star"}, ...]}`
+— one entry per velocity, `t_star`/`m_star` `null` where no t* was found.
+The desktop app prints the same table in its output panel.
 - `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`, then
   `fit_slope, fit_intercept` (the line over the steady segment),
   `fit_window_t1, fit_window_t2` (that segment, `[t*, T]`),
@@ -299,7 +302,8 @@ two-dimensional.
 `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 `workers` — how many points to solve at once on the CPU; `0` (default) uses one
 per core, less one.
-**Output:** `ab_grid_char_time/<timestamp>/`
+**Output:** `ab_grid_char_time/<timestamp>/`, and a job `result` of the same
+shape as above with `a`, `b` in each `t_star` entry, plus `device`.
 
 Every filename ends in the parameters held fixed across the run — `v`, the
 microtubule count and the grid — written as `v10000_N4_96x96` for the example

@@ -399,5 +399,40 @@ def run_selected_computation(computation_name, param_dict):
                     break
             return output
 
+    # --- Case 4: characteristic time (t* table plus figures) ---
+    if computation_name in _CHAR_TIME_COMPUTATIONS and isinstance(result, dict):
+        return _char_time_summary(result)
+
     # --- Fallback: return as-is ---
     return result
+
+
+def _char_time_summary(result):
+    """Shape a characteristic-time kernel's return value for every caller.
+
+    ``output_dirs`` is what the desktop GUI looks for to list and preview the
+    CSV and figures; ``t_star`` carries each point's t* and m* = M(t*) so the
+    GUI can print them and an API job's stored result states them without
+    anyone opening the CSV. NaN -- no t* within T -- becomes None so the result
+    stays valid JSON.
+    """
+    import math
+    import pandas as pd
+
+    table = pd.read_csv(result["csv"])
+    keys = [c for c in ("v", "a", "b") if c in table.columns]
+
+    def clean(x):
+        x = float(x)
+        return None if math.isnan(x) else x
+
+    rows = [{**{k: float(r[k]) for k in keys},
+             "t_star": clean(r["t_star"]), "m_star": clean(r["m_star"])}
+            for _, r in table.iterrows()]
+    out = {"output_dirs": [result["output_dir"]], "csv": result["csv"],
+           "t_star": rows}
+    if "tau" in table.columns and len(table):
+        out["tau"] = float(table["tau"].iloc[0])
+    if "device" in result:
+        out["device"] = result["device"]
+    return out

@@ -42,8 +42,8 @@ def _log(msg):
 def _job_output_root(job_id):
     """Per-job output tree, passed to the child as ITCM_OUTPUT_ROOT.
 
-    Several kernels write files and return None (collect_char_time_mass among
-    them), so a job's return value does not say what it produced. Giving each
+    Several kernels write files and return None, so a job's return value does
+    not always say what it produced. Giving each
     job its own output root makes that unambiguous: everything under this
     directory belongs to this job.
 

@@ -42,6 +42,7 @@ application**. To build it yourself, jump to
 - [Install on Windows](#install-on-windows)
 - [Verify it works](#verify-it-works)
 - [Where your results are saved](#where-your-results-are-saved)
+- [Characteristic time (t*)](#characteristic-time-t)
 - [Running on the compute server instead](#running-on-the-compute-server-instead)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -178,6 +179,34 @@ own directory.
 Either way the folder is created on the first run. `data_output/` is scratch and
 is not committed — results worth keeping get promoted into `results/` under a
 descriptive name.
+
+---
+
+## Characteristic time (t*)
+
+The two characteristic-time computations — **Characteristic Time (mass vs v)**
+and **Characteristic Time (a,b grid)** — report, for each point, the
+characteristic time `t*` and the mass remaining at it, `m* = M(t*)`.
+
+`t*` is the **onset of steady exponential decay** of the total mass, read from
+the second derivative of `y = ln M(t)`. Each sample is marked `l(t) = 1` where
+`|y''(t)| ≤ tau` and `0` otherwise; sweeping **from the right**, `t*` is the
+sample just after the last one with `l = 0`, so `|y''| ≤ tau` from `t*` to the
+end of the run. `y''` is a second-order central difference taken at a step of
+about `1e-4` in time on every grid. `tau` is an optional parameter (default
+`1e-3`; `1e-2` is also a reasonable choice).
+
+- If `|y''|` is still above `tau` when the run ends, there is **no `t*`**: the
+  point is reported as empty (NaN / `null`) with a warning. Raise `T` or `tau`.
+  Slow switching onto the advective layer (`b ≤ 1`) needs `T` of about 4.
+- The **desktop app** prints each point's `t*` and `m*` in its output panel and
+  lists the CSV and figures; on the **compute server** the same table is the
+  job's `result`. Parameters and outputs are in
+  [`server/docs/COMPUTATION_MENU.md`](server/docs/COMPUTATION_MENU.md).
+- This definition replaced two earlier ones (a line through `log10 M` at
+  `t = 0.4, 0.5` extrapolated to `M = 1`, and a threshold on `|y''|/y'^2`);
+  numbers from different definitions are not comparable. The studies behind
+  it are in `results/2026-10-05_*` and `results/2026-10-07_ab-grid-96x96_tau0.01/`.
 
 ---
 

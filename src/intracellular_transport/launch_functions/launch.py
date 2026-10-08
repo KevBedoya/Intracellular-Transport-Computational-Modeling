@@ -1336,6 +1336,12 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
     if show_plt:
         plt.show()
 
+    # Same shape as collect_ab_grid_char_time returns, so the router can hand
+    # both to the desktop GUI and the API the same way. It used to return None,
+    # which left the caller to find its files by searching the output tree.
+    return {"output_dir": output_directory, "csv": data_location,
+            "plots": {"m_star_vs_v": plot_location}, "points": len(v_axis)}
+
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
