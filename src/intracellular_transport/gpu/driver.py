@@ -80,7 +80,8 @@ def check_supported(rg_param, ry_param, d_tube, center_init_cond):
 def solve(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
           N_LIST, D_LAYER, A_LAYER, series, MA_collection_factor, relative_k,
           d_tube=0.0, domain_radius=1.0, D=1.0, center_init_cond=True,
-          chunk_steps=DEFAULT_CHUNK, on_chunk=None, resume_state=None):
+          chunk_steps=DEFAULT_CHUNK, on_chunk=None, resume_state=None,
+          boundary=None):
     """Run the mass-analysis solve on the GPU.
 
     ``series`` is the five timeseries in the same order the CPU driver takes
@@ -148,6 +149,10 @@ def solve(rg_param, ry_param, switch_param_a, switch_param_b, v_param, T_param,
     step = K if chunk_steps <= 0 else min(int(chunk_steps), K)
     while k < K:
         k_end = min(k + step, K)
+        if boundary is not None and k < boundary < k_end:
+            # A chunk edge the caller needs -- the step at which the final
+            # state is kept (checkpointing.Checkpoint.save_final).
+            k_end = boundary
         pk.solve_chunk[blocks, pk.THREADS_PER_BLOCK](
             d_phi, d_rho, d_dmap, d_tube, d_NL, d_partial, d_series, d_state,
             rg_param, ry_param, NL.size,

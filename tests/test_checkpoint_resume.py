@@ -19,6 +19,12 @@ import sys
 
 import numpy as np
 
+# Finished checkpointed solves now log their final state; keep that out of the
+# repository's comp-state-ledger.
+import tempfile                                             # noqa: E402
+os.environ.setdefault("ITCM_STATE_LEDGER",
+                      os.path.join(tempfile.gettempdir(), "itcm_test_state_ledger"))
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 _SRC = os.path.join(_ROOT, "src")

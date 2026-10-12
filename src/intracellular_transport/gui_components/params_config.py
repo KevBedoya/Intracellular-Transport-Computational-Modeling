@@ -291,7 +291,8 @@ PARAMETER_SCHEMAS = {
             ("n_init", 0),
             ("show_plt", False),
             ("device", "cpu"),
-            ("tau", 1e-3)
+            ("tau", 1e-3),
+            ("extend_from", "")
         ],
         "approach": ["time-dependent"]
     },
@@ -318,7 +319,8 @@ PARAMETER_SCHEMAS = {
             ("show_plt", False),
             ("device", "cpu"),
             ("workers", 0),
-            ("tau", 1e-3)
+            ("tau", 1e-3),
+            ("extend_from", "")
         ],
         "approach": ["time-dependent"]
     },
@@ -466,6 +468,11 @@ PARAMETER_HINTS = {
     "workers": ("workers: How many (a, b) points to solve concurrently on the "
                 "CPU. 0 (default) uses one per core, less one. Ignored on the "
                 "GPU, where a single solve already fills the card. (int)"),
+    "extend_from": ("extend_from: Continue an earlier, shorter run of the same "
+                    "points from its saved final state instead of starting at "
+                    "t = 0: the earlier job's id (or a prefix of it), as listed in "
+                    "comp-state-ledger. Only T_param may differ. Leave blank to "
+                    "start from scratch. (str)"),
     "tau": ("tau: Steady-decay threshold for t*. t* is the time from which "
             "|y''| of y = ln(total mass) stays at or below tau to the end of "
             "the run. Smaller is stricter and gives a later t*. "

@@ -906,8 +906,16 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
     series = (MA_DL_timeseries, MA_AL_timeseries, MA_ALoI_timeseries,
               MA_ALoT_timeseries, MA_TM_timeseries)
 
+    # The final state is kept at k_align, the first step whose sample this run's
+    # series cannot hold, so a longer run can continue it with every later
+    # sample landing in its proper slot (checkpointing.Checkpoint.save_final).
+    # A chunk boundary is forced there.
+    k_align = min(MA_collection_factor * relative_k, K)
+
     while k < K:
         k_end = min(k + step, K)
+        if checkpoint is not None and k < k_align < k_end:
+            k_end = k_align
         central_patch, dl_mass, al_mass, MA_k_step = advance_mass_analysis(
             k, k_end, rg_param, ry_param, switch_param_a, switch_param_b,
             v_param, N_LIST, D_LAYER, A_LAYER,
@@ -920,6 +928,9 @@ def comp_mass_analysis_respect_to_time(rg_param, ry_param, switch_param_a, switc
         if checkpoint is not None:
             checkpoint.save(k, D_LAYER, A_LAYER, state, series=series,
                             force=(k >= K))
+            if k == k_align and k > 0:
+                checkpoint.save_final(k, D_LAYER, A_LAYER, state, series,
+                                      t=k * dT, dT=dT)
         if on_chunk is not None:
             on_chunk(k, state)
 

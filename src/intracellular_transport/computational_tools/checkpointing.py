@@ -32,6 +32,16 @@ STATE_FILE = "resume_state.npz"
 TIMESERIES_PREFIX = "timeseries"
 FINGERPRINT_FILE = "run.json"
 
+# The state a finished solve leaves behind so a later, longer run can continue
+# it instead of starting over (see Checkpoint.save_final / prepare_extension).
+FINAL_STATE_FILE = "final_state.npz"
+FINAL_META_FILE = "final_state.json"
+
+# Fingerprint keys that may differ between a run and its extension: the end
+# time and, with it, the number of samples. Everything else defines the
+# trajectory and must match exactly.
+EXTENSIBLE_KEYS = ("T", "relative_k")
+
 # Bumped if the on-disk layout changes in a way older checkpoints cannot satisfy.
 FORMAT_VERSION = 1
 
@@ -56,6 +66,19 @@ def fingerprint(**params):
     norm["_format"] = FORMAT_VERSION
     blob = json.dumps(norm, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest(), norm
+
+
+def extension_digest(params):
+    """Digest of a run's fingerprint with the end time taken out.
+
+    Two runs with the same extension digest follow the same trajectory step for
+    step -- dT depends only on the grid, and nothing a step does depends on T --
+    so one can continue the other. ``params`` is the normalised dict
+    ``fingerprint`` returns.
+    """
+    core = {k: v for k, v in params.items()
+            if k not in EXTENSIBLE_KEYS and k != "_format"}
+    return fingerprint(**core)[0]
 
 
 def allocate_timeseries(relative_k, count=5, directory=None, resume=False):
@@ -214,10 +237,133 @@ class Checkpoint:
         """Remove the resume state, leaving the timeseries alone.
 
         Called on successful completion: the run is finished, so a stale
-        checkpoint would only invite a pointless resume.
+        checkpoint would only invite a pointless resume. The final state saved
+        by ``save_final`` is a different file and is kept.
         """
         for p in (self.state_path, self.state_path + ".tmp"):
             try:
                 os.remove(p)
             except OSError:
                 pass
+
+    # ---------------------------------------------------------- final state
+    @property
+    def final_state_path(self):
+        return os.path.join(self.directory, FINAL_STATE_FILE)
+
+    @property
+    def final_meta_path(self):
+        return os.path.join(self.directory, FINAL_META_FILE)
+
+    def save_final(self, k, D_LAYER, A_LAYER, scalars, series, t, dT):
+        """Keep the state a later, longer run needs to continue this one.
+
+        Saved at k_align = MA_collection_factor * relative_k: the first step
+        whose sample this run's series has no room for. Resuming there, with
+        the sample counter at relative_k, files every later sample in exactly
+        the slot a run straight through would have used. (Saving at K instead
+        would drop the one sample between k_align and K whenever K is not a
+        multiple of the collection factor, shifting the whole extension.)
+
+        Writes the state (same layout as the resume state) and a JSON record,
+        then logs the state in the repository's comp-state-ledger. Never raises
+        for a ledger problem: the state on disk is what matters.
+        """
+        import datetime
+
+        flush_timeseries(series)
+        central_patch, dl_mass, al_mass, MA_k_step = scalars
+        tmp = self.final_state_path + ".tmp"
+        np.savez(tmp,
+                 k=np.int64(k),
+                 central_patch=np.float64(central_patch),
+                 dl_mass=np.float64(dl_mass),
+                 al_mass=np.float64(al_mass),
+                 MA_k_step=np.int64(MA_k_step),
+                 D=np.asarray(D_LAYER),
+                 A=np.asarray(A_LAYER))
+        produced = tmp if os.path.exists(tmp) else tmp + ".npz"
+        os.replace(produced, self.final_state_path)
+
+        params = self.params or {}
+        meta = {
+            "k": int(k),
+            "t": float(t),
+            "dT": float(dT),
+            "MA_k_step": int(MA_k_step),
+            "relative_k": int(len(series[0])),
+            "T_requested": params.get("T"),
+            "digest": self.digest,
+            "extension_digest": extension_digest(params) if params else None,
+            "params": params,
+            "saved_utc": datetime.datetime.now(datetime.timezone.utc)
+                                            .isoformat(timespec="seconds"),
+        }
+        tmpj = self.final_meta_path + ".tmp"
+        with open(tmpj, "w") as f:
+            json.dump(meta, f, indent=2, default=str)
+        os.replace(tmpj, self.final_meta_path)
+
+        try:
+            from computational_tools import state_ledger
+            state_ledger.record(self.directory, meta)
+        except Exception as e:                      # pragma: no cover
+            print(f"warning: final state saved but not logged in the ledger: {e}")
+
+
+def read_final_meta(directory):
+    """The final-state record in ``directory``, or None if there is none."""
+    path = os.path.join(directory, FINAL_META_FILE)
+    if not (os.path.exists(path)
+            and os.path.exists(os.path.join(directory, FINAL_STATE_FILE))):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def prepare_extension(src_dir, dst_dir, digest, params, n_samples, count=5):
+    """Seed ``dst_dir`` so a longer run resumes from ``src_dir``'s final state.
+
+    Refuses unless the two runs share an extension digest -- same grid, rates,
+    velocity, tubes, initial condition and sampling; only T may differ -- and
+    the new run is longer. Then copies the samples already taken into the new,
+    longer series, installs the final state as the resume state and writes the
+    new run's fingerprint, after which the normal resume path continues the
+    solve from step k_align.
+    """
+    meta = read_final_meta(src_dir)
+    if meta is None:
+        raise ValueError(f"no saved final state in {src_dir}")
+
+    want = extension_digest(params)
+    if meta.get("extension_digest") != want:
+        raise ValueError(
+            f"the final state in {src_dir} belongs to a different run "
+            f"(only T may differ when extending); its parameters were "
+            f"{meta.get('params')}")
+    have = int(meta["MA_k_step"])
+    if n_samples <= have:
+        raise ValueError(
+            f"nothing to extend: the saved run already holds {have} samples "
+            f"(t = {meta['t']:.6g}) and this run needs only {n_samples}")
+
+    old = allocate_timeseries(int(meta["relative_k"]), count, directory=src_dir,
+                              resume=True)
+    new = allocate_timeseries(n_samples, count, directory=dst_dir)
+    for o, n in zip(old, new):
+        n[:have] = o[:have]
+    flush_timeseries(new)
+    del old, new
+
+    tmp = os.path.join(dst_dir, STATE_FILE + ".tmp")
+    with open(os.path.join(src_dir, FINAL_STATE_FILE), "rb") as fi, \
+            open(tmp, "wb") as fo:
+        fo.write(fi.read())
+    os.replace(tmp, os.path.join(dst_dir, STATE_FILE))
+
+    with open(os.path.join(dst_dir, "extended_from.json"), "w") as f:
+        json.dump({"source": os.path.abspath(src_dir), "source_t": meta["t"],
+                   "source_k": meta["k"], "source_digest": meta["digest"]},
+                  f, indent=2)
+    Checkpoint(dst_dir, digest, params)            # writes run.json
+    return meta

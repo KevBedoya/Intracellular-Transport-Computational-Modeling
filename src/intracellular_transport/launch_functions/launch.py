@@ -967,7 +967,7 @@ def _create_unique_timestamp_dir(parent_directory, timestamp_format="%Y-%m-%d_%H
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
-def _setup_checkpoint(tag, n_samples, **fp_params):
+def _setup_checkpoint(tag, n_samples, extend_from=None, **fp_params):
     """Prepare checkpointing for one solve, if it is enabled for this run.
 
     ``n_samples`` is the timeseries length; it is named distinctly from the
@@ -978,6 +978,12 @@ def _setup_checkpoint(tag, n_samples, **fp_params):
     returns no checkpoint and ordinary in-RAM timeseries, so nothing about the
     existing paths changes.
 
+    ``extend_from`` continues an earlier, shorter run of the same point from
+    its saved final state instead of starting at t = 0: a job id recorded in
+    comp-state-ledger, or a checkpoints directory. Only T may differ from the
+    earlier run (checkpointing.prepare_extension refuses anything else). See
+    comp-state-ledger/README.md.
+
     Returns ``(checkpoint_or_None, five_timeseries)``.
     """
     import os
@@ -985,10 +991,21 @@ def _setup_checkpoint(tag, n_samples, **fp_params):
 
     root = os.environ.get("ITCM_CHECKPOINT_DIR")
     if not root:
+        if extend_from:
+            raise ValueError(
+                "extend_from needs checkpointing, which is on for jobs run "
+                "through the compute server (or with ITCM_CHECKPOINT_DIR set)")
         return None, chk.allocate_timeseries(n_samples, 5)
 
     directory = os.path.join(root, tag)
     digest, params = chk.fingerprint(**fp_params)
+    if extend_from and not os.path.exists(os.path.join(directory, chk.STATE_FILE)):
+        from computational_tools import state_ledger
+
+        src = state_ledger.resolve(extend_from, tag)
+        meta = chk.prepare_extension(src, directory, digest, params, n_samples)
+        print(f"extending {tag} from its saved state at t = {meta['t']:.6g} "
+              f"(step {meta['k']:,}) in {src}")
     # Resume only if this exact configuration was already under way here.
     resume = os.path.exists(os.path.join(directory, chk.STATE_FILE))
     series = chk.allocate_timeseries(n_samples, 5, directory=directory,
@@ -1050,8 +1067,17 @@ def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
                     print(f"    resuming from checkpoint at step "
                           f"{resume_state[0]:,}")
 
+            # Keep the final state at k_align, as the CPU path does, so a
+            # later run can extend this one (Checkpoint.save_final).
+            K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
+            k_align = min(MA_collection_factor * relative_k, K)
+            dT = num.compute_dT(rg_param, ry_param, domain_radius, D)
+
             def on_chunk(k, state):
                 cp.save(k, D_LAYER, A_LAYER, state, series=series)
+                if k == k_align and k > 0:
+                    cp.save_final(k, D_LAYER, A_LAYER, state, series,
+                                  t=k * dT, dT=dT)
 
             result = gpu_driver.solve(
                 rg_param, ry_param, a_param, b_param, v_param, T_param,
@@ -1059,7 +1085,8 @@ def _solve_mass_analysis(device, series, rg_param, ry_param, a_param, b_param,
                 relative_k, d_tube=d_tube, domain_radius=domain_radius, D=D,
                 center_init_cond=center_init_cond,
                 on_chunk=None if cp is None else on_chunk,
-                resume_state=resume_state)
+                resume_state=resume_state,
+                boundary=None if cp is None else k_align)
             if cp is not None:
                 cp.clear()
             return result
@@ -1205,7 +1232,8 @@ def _char_time_onset(total_mass, sample_dt, tau=CHAR_TIME_TAU,
 def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
                      T_param, N_LIST, MA_collection_factor, relative_k, tau,
                      d_tube, domain_radius, D, mass_checkpoint,
-                     center_init_cond, m_init, n_init, device, label=""):
+                     center_init_cond, m_init, n_init, device, label="",
+                     extend_from=None):
     """One solve plus the steady-decay criterion that defines t*.
 
     This is the characteristic-time kernel proper: everything done per parameter
@@ -1227,7 +1255,7 @@ def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
     # One checkpoint directory per point, since each is a separate solve;
     # without a distinguishing tag a sweep would resume the wrong trajectory.
     cp, series = _setup_checkpoint(
-        tag, relative_k,
+        tag, relative_k, extend_from=extend_from,
         rg_param=rg_param, ry_param=ry_param, a=a_param, b=b_param,
         v=v_param, T=T_param, N_LIST=N_LIST, d_tube=d_tube,
         domain_radius=domain_radius, D=D,
@@ -1279,12 +1307,16 @@ def _char_time_point(tag, rg_param, ry_param, a_param, b_param, v_param,
 
 def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST, MA_collection_factor=5, domain_radius=1.0, D=1.0,
                            mass_checkpoint=10 ** 6, d_tube=0.0, center_init_cond=True, m_init=0, n_init=0, show_plt=True,
-                           device=DEVICE_CPU, tau=CHAR_TIME_TAU):
+                           device=DEVICE_CPU, tau=CHAR_TIME_TAU, extend_from=None):
     """m* and t* against velocity, at a single mutual switch rate a = b = w.
 
     t* is the onset of steady exponential decay of the total mass and m* the
     mass remaining at t*; ``tau`` is the threshold on |d2 ln(total mass)/dt2|
     that decides it. See the block above _char_time_onset.
+
+    ``extend_from`` continues each velocity's earlier, shorter run from its
+    saved final state rather than starting at t = 0 -- a job id from
+    comp-state-ledger, or that job's checkpoints directory. Only T may differ.
     """
 
     K = num.compute_K(rg_param, ry_param, T_param, domain_radius, D)
@@ -1304,7 +1336,8 @@ def collect_char_time_mass(rg_param, ry_param, v_LIST, w_param, T_param, N_LIST,
             f"char_time_v{v_param:g}", rg_param, ry_param, a_param, b_param,
             v_param, T_param, N_LIST, MA_collection_factor, relative_k, tau,
             d_tube, domain_radius, D, mass_checkpoint, center_init_cond,
-            m_init, n_init, device, label=f"v = {v_param}")
+            m_init, n_init, device, label=f"v = {v_param}",
+            extend_from=extend_from)
 
     v_axis = list(fits.keys())
     m_axis = [fits[v_param]["m_star"] for v_param in v_axis]
@@ -1525,7 +1558,7 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
                               D=1.0, mass_checkpoint=10 ** 6, d_tube=0.0,
                               center_init_cond=True, m_init=0, n_init=0,
                               show_plt=False, device=DEVICE_CPU, workers=0,
-                              tau=CHAR_TIME_TAU):
+                              tau=CHAR_TIME_TAU, extend_from=None):
     """Characteristic time t* over the full grid of (a, b) switch rates.
 
     Where ``collect_char_time_mass`` sweeps velocity at a single switch rate
@@ -1539,7 +1572,8 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     Each point is the same solve-and-criterion as the velocity sweep, run
     through the shared ``_char_time_point`` kernel, so a 1x1 grid at (w, w)
     reproduces ``collect_char_time_mass`` for that velocity exactly. ``tau`` is
-    the steady-decay threshold, as there.
+    the steady-decay threshold, and ``extend_from`` continues each point from a
+    shorter earlier run's saved final state, as there.
 
     Outputs, under ``data_output/ab_grid_char_time/<timestamp>/``. Every
     filename carries the parameters held fixed across the run -- ``v``, the
@@ -1608,7 +1642,7 @@ def collect_ab_grid_char_time(rg_param, ry_param, a_list, b_list, v_param, T_par
     cfg = dict(
         rg_param=rg_param, ry_param=ry_param, v_param=v_param, T_param=T_param,
         N_LIST=N_LIST, MA_collection_factor=MA_collection_factor,
-        relative_k=relative_k, tau=tau, d_tube=d_tube,
+        relative_k=relative_k, tau=tau, d_tube=d_tube, extend_from=extend_from,
         domain_radius=domain_radius, D=D, mass_checkpoint=mass_checkpoint,
         center_init_cond=center_init_cond, m_init=m_init, n_init=n_init,
         device=DEVICE_GPU if on_gpu else DEVICE_CPU)
