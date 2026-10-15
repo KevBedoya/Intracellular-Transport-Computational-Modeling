@@ -22,6 +22,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from launch_functions import launch as L
+from t4_source import load_series
+
+TT, SRC = {}, {}
 
 TAU = float(sys.argv[1]) if len(sys.argv) > 1 else 1e-2
 SP = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +41,8 @@ print(f"sample h={h:.4g}  stride s={s}  H={H:.6g}  tau={TAU:g}")
 data, rows = {}, []
 for a in A:
     for b in B:
-        m = np.fromfile(os.path.join(SP, f"tm_a{a:g}_b{b:g}.dat"), dtype=np.float64)
+        m, Tp, src = load_series(a, b, SP)
+        TT[(a, b)], SRC[(a, b)] = Tp, src
         n = m.size
         t = np.arange(n) * h
         y = np.log(m)
@@ -58,9 +62,9 @@ for a in A:
         full[s:-s] = kap
         keep = slice(0, None, s)
         data[(a, b)] = (t[keep], y[keep], full[keep], ts)
-        rows.append(dict(a=a, b=b, t_star=ts, m_star=mstar, M_at_T=float(m[-1]),
+        rows.append(dict(a=a, b=b, T=Tp, source=src, t_star=ts, m_star=mstar, M_at_T=float(m[-1]),
                          kappa_at_T=float(kap[-1]),
-                         hold_ge_0p1=None if ts is None else bool(T - ts >= HOLD),
+                         hold_ge_0p1=None if ts is None else bool(Tp - ts >= HOLD),
                          tau=TAU))
         print(f"  a={a:g} b={b:g}: t*={'none' if ts is None else f'{ts:.6f}'}  "
               f"kappa(T)={kap[-1]:.3g}", flush=True)
@@ -68,20 +72,20 @@ for a in A:
 pd.DataFrame(rows).to_csv(os.path.join(OUT, f"t_star_kappa_96x96_tau{TAU:g}.csv"), index=False)
 
 fmt = lambda v, f: "none" if v is None else format(v, f)
-cells = [[f"{r['a']:g}", f"{r['b']:g}", fmt(r["t_star"], ".6f"), fmt(r["m_star"], ".6e"),
+cells = [[f"{r['a']:g}", f"{r['b']:g}", f"{r['T']:g}", fmt(r["t_star"], ".6f"), fmt(r["m_star"], ".6e"),
           f"{r['M_at_T']:.6e}", f"{r['kappa_at_T']:.3g}",
           "-" if r["hold_ge_0p1"] is None else ("yes" if r["hold_ge_0p1"] else "no")]
          for r in rows]
 fig, ax = plt.subplots(figsize=(11, 0.4 * len(cells) + 1.4))
 ax.axis("off")
-tb = ax.table(cellText=cells, colLabels=["a", "b", "t*", "m* = M(t*)", "M(T=1)",
+tb = ax.table(cellText=cells, colLabels=["a", "b", "T", "t*", "m* = M(t*)", "M(T)",
                                           "kappa(T)", ">= 0.1 run after t*"],
               loc="center", cellLoc="center")
 tb.auto_set_font_size(False)
 tb.set_fontsize(10)
 tb.scale(1, 1.35)
 ax.set_title(rf"t* by $\kappa = |y''|/y'^2 \leq \tau$ = {TAU:g} (right sweep) -- 96x96, v=1, "
-             f"N=4, T=1 (job 0b8d4022), H={H:.3g}", fontsize=10)
+             f"N=4, T = 1 (job 0b8d4022) or 4 (job 54cdf1f3), H={H:.3g}", fontsize=10)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, f"t_star_table_kappa_96x96_tau{TAU:g}.png"), dpi=130)
 plt.close(fig)
@@ -89,7 +93,8 @@ plt.close(fig)
 
 def title(k):
     ts = data[k][3]
-    return f"a={k[0]:g}, b={k[1]:g}  t*=" + ("none" if ts is None else f"{ts:.4f}")
+    return (f"a={k[0]:g}, b={k[1]:g}  T={TT[k]:g}  t*="
+            + ("none" if ts is None else f"{ts:.4f}"))
 
 
 def mark(ax, k):
@@ -143,11 +148,11 @@ figs = [(f"kappa_96x96_tau{TAU:g}_ylim0.1.png", r"$\kappa(t)$",
          lambda ax, k: lnm_panel(ax, k, True),
          r"  (window: t* $\pm$ 0.15, $\ln M(t^*)$ $\pm$ 0.5)", False)]
 for name, ylab, panel, extra, share in figs:
-    fig, axes = plt.subplots(4, 4, figsize=(16, 12), sharex=share)
+    fig, axes = plt.subplots(4, 4, figsize=(16, 12), sharex=False)
     for i, a in enumerate(A):
         for j, b in enumerate(B):
             ax = axes[i, j]
-            ax.set_xlim(0, T)
+            ax.set_xlim(0, TT[(a, b)])
             panel(ax, (a, b))
             ax.grid(True, alpha=0.3)
             ax.set_title(title((a, b)), fontsize=9)
@@ -155,7 +160,7 @@ for name, ylab, panel, extra, share in figs:
                 ax.set_xlabel("t")
             if j == 0:
                 ax.set_ylabel(ylab)
-    head = f"{ylab}, 96x96, v=1, N=4, T=1{extra}"
+    head = f"{ylab}, 96x96, v=1, N=4, T = 1 (job 0b8d4022), T = 4 where the panel says so (job 54cdf1f3){extra}"
     if "kappa_96x96" in name:
         head += "\n" + STEP_LINE
     fig.suptitle(f"{head}\n{NOTE}", fontsize=11)

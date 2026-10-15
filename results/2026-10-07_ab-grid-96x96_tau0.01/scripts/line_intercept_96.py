@@ -17,6 +17,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from launch_functions import launch as L
+from t4_source import load_series
+
+TT, SRC = {}, {}
 
 SP = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(R, "results", "2026-10-07_ab-grid-96x96_tau0.01", "line_intercept_criterion")
@@ -56,7 +59,8 @@ for a in A:
     for b in B:
         if (a, b) in EXCLUDED:
             continue
-        m = np.fromfile(os.path.join(SP, f"tm_a{a:g}_b{b:g}.dat"), dtype=np.float64)
+        m, Tp, src = load_series(a, b, SP)
+        TT[(a, b)], SRC[(a, b)] = Tp, src
         t = np.arange(m.size) * h
         y1, y2 = np.log10(m[i1]), np.log10(m[i2])
         slope = (y2 - y1) / (X2 - X1)
@@ -66,7 +70,7 @@ for a in A:
         m10 = float(m[k10]) if 0 <= k10 < m.size else float("nan")
         mts = float(np.exp(np.interp(ts, t, np.log(m)))) if 0 <= ts <= t[-1] else float("nan")
         data[(a, b)] = (t[::stride], np.log(m[::stride]), ts, slope, icpt)
-        rows.append(dict(a=a, b=b, t_star_intercept=ts, slope_log10=slope,
+        rows.append(dict(a=a, b=b, T=Tp, source=src, t_star_intercept=ts, slope_log10=slope,
                          intercept_log10=icpt, M_at_0p4=float(m[i1]), M_at_0p5=float(m[i2]),
                          M_at_t_star=mts, m_star_old_M_at_10t_star=m10))
         print(f"a={a:g} b={b:g}: t*={ts:.6f}  slope={slope:.4f}  M(10t*)={m10:.4g}")
@@ -77,14 +81,14 @@ table.to_csv(os.path.join(OUT, "t_star_line_intercept_96x96.csv"), index=False)
 
 def title(k):
     ts = data[k][2]
-    return f"a={k[0]:g}, b={k[1]:g}  t*={ts:.4f}"
+    return f"a={k[0]:g}, b={k[1]:g}  T={TT[k]:g}  t*={ts:.4f}"
 
 
 def panel(ax, k, zoom):
     t, y, ts, slope, icpt = data[k]
     ax.plot(t, y, lw=1.2, color="0.25", label=r"$\ln M$")
     # The fitted line, in ln M units: ln M = ln(10) * (icpt + slope * t).
-    tl = np.linspace(min(0.0, ts) - 0.05, T, 400)
+    tl = np.linspace(min(0.0, ts) - 0.05, TT[k], 400)
     ax.plot(tl, np.log(10) * (icpt + slope * tl), lw=1.0, ls="--", color="C0",
             label="line through t=0.4, 0.5")
     ax.plot([X1, X2], np.log(10) * (icpt + slope * np.array([X1, X2])), "o", ms=4,
@@ -92,15 +96,15 @@ def panel(ax, k, zoom):
     ax.axhline(0, color="k", lw=0.6)
     ax.axvline(ts, color="red", lw=1.2)
     if zoom:
-        if 0 <= ts <= T:
+        if 0 <= ts <= TT[k]:
             ax.set_xlim(ts - 0.15, ts + 0.15)
             ax.set_ylim(-0.5, 0.5)
         else:
-            ax.set_xlim(min(0.0, ts) - 0.05, T)
+            ax.set_xlim(min(0.0, ts) - 0.05, TT[k])
             ax.text(0.5, 0.06, "t* outside [0, 1]: full view", ha="center", fontsize=8,
                     color="0.4", transform=ax.transAxes)
     else:
-        ax.set_xlim(min(0.0, ts) - 0.05, T)
+        ax.set_xlim(min(0.0, ts) - 0.05, TT[k])
 
 
 for name, zoom, extra in [("lnM_line_intercept_96x96.png", False, ""),
@@ -123,7 +127,7 @@ for name, zoom, extra in [("lnM_line_intercept_96x96.png", False, ""),
     first = (3, 3) if MODE in ("main", "all") else next(
         (i, j) for i, x in enumerate(A) for j, z in enumerate(B) if (x, z) not in EXCLUDED)
     axes[first].legend(fontsize=7, loc="lower left")
-    fig.suptitle(f"ln M(t), 96x96, v=1, N=4, T=1{extra}\n"
+    fig.suptitle(f"ln M(t), 96x96, v=1, N=4, T = 1 (job 0b8d4022), T = 4 where the panel says so (job 54cdf1f3){extra}\n"
                  r"original criterion: line through $\log_{10}M$ at t = 0.4, 0.5 (blue dashed, "
                  r"points); red: t* where it reaches $M$ = 1 ($\ln M$ = 0)", fontsize=11)
     fig.tight_layout()

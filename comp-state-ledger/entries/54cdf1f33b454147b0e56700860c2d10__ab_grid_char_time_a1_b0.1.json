@@ -1,0 +1,21 @@
+{
+  "job_id": "54cdf1f33b454147b0e56700860c2d10",
+  "point": "ab_grid_char_time_a1_b0.1",
+  "state_dir": "N:\\work\\Intracellular-Transport-Computational-Modeling\\data_output\\jobs\\54cdf1f33b454147b0e56700860c2d10\\checkpoints\\ab_grid_char_time_a1_b0.1",
+  "t_reached": 3.9999999404231676,
+  "k": 172113595,
+  "samples": 34422719,
+  "T_requested": 4,
+  "grid": "96x96",
+  "a": 1.0,
+  "b": 0.1,
+  "v": 1,
+  "N_LIST": [
+    0,
+    24,
+    48,
+    72
+  ],
+  "extension_digest": "610cbd9b5db1ad9eda423ab5384190321c93a0ee47a878c9c4fcef0cb2a5335e",
+  "saved_utc": "2026-10-14T10:04:55+00:00"
+}

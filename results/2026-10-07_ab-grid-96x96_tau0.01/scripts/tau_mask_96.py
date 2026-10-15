@@ -22,6 +22,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from launch_functions import launch as L
+from t4_source import load_series
+
+TT, SRC = {}, {}
 
 TAU = float(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] not in ("main", "additional") else 1e-2
 SP = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +63,8 @@ for a in A:
     for b in B:
         if (a, b) in EXCLUDED:
             continue
-        m = np.fromfile(os.path.join(SP, f"tm_a{a:g}_b{b:g}.dat"), dtype=np.float64)
+        m, Tp, src = load_series(a, b, SP)
+        TT[(a, b)], SRC[(a, b)] = Tp, src
         t = np.arange(m.size) * h
         y = np.log(m)
         q = np.full_like(y, np.nan)
@@ -69,7 +73,7 @@ for a in A:
         ts = None if np.isnan(r["t_star"]) else r["t_star"]
         keep = slice(0, None, s)                 # plot at the differencing spacing
         data[(a, b)] = (t[keep], y[keep], q[keep], ts)
-        rows.append(dict(a=a, b=b, t_star=ts, m_star=None if ts is None else r["m_star"],
+        rows.append(dict(a=a, b=b, T=Tp, source=src, t_star=ts, m_star=None if ts is None else r["m_star"],
                          M_at_T=float(m[-1]), fit_slope_log10=None if ts is None else r["fit_slope"],
                          tau=TAU))
         print(f"  a={a:g} b={b:g}: t*={'none' if ts is None else f'{ts:.6f}'}", flush=True)
@@ -79,17 +83,17 @@ table.to_csv(os.path.join(OUT, f"t_star_96x96_tau{TAU:g}.csv"), index=False)
 
 # Table as an image.
 fmt = lambda v, f: "none" if v is None or (isinstance(v, float) and np.isnan(v)) else format(v, f)
-cells = [[f"{r['a']:g}", f"{r['b']:g}", fmt(r["t_star"], ".6f"), fmt(r["m_star"], ".6e"),
+cells = [[f"{r['a']:g}", f"{r['b']:g}", f"{r['T']:g}", fmt(r["t_star"], ".6f"), fmt(r["m_star"], ".6e"),
           f"{r['M_at_T']:.6e}"] for r in rows]
 fig, ax = plt.subplots(figsize=(9, 0.42 * len(cells) + 1.4))
 ax.axis("off")
-tb = ax.table(cellText=cells, colLabels=["a", "b", "t*", "m* = M(t*)", "M(T=1)"],
+tb = ax.table(cellText=cells, colLabels=["a", "b", "T", "t*", "m* = M(t*)", "M(T)"],
               loc="center", cellLoc="center")
 tb.auto_set_font_size(False)
 tb.set_fontsize(10)
 tb.scale(1, 1.4)
-ax.set_title(rf"t* by right-sweep mask, $\tau$ = {TAU:g}  --  96x96, v=1, N=4, T=1 "
-             f"(job 0b8d4022), y'' step H={H:.3g}", fontsize=10)
+ax.set_title(rf"t* by right-sweep mask, $\tau$ = {TAU:g}  --  96x96, v=1, N=4, "
+             f"T = 1 (job 0b8d4022) or 4 (job 54cdf1f3), y'' step H={H:.3g}", fontsize=10)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, f"t_star_table_96x96_tau{TAU:g}.png"), dpi=130)
 plt.close(fig)
@@ -97,7 +101,8 @@ plt.close(fig)
 
 def title(k):
     ts = data[k][3]
-    return f"a={k[0]:g}, b={k[1]:g}  t*=" + ("none" if ts is None else f"{ts:.4f}")
+    return (f"a={k[0]:g}, b={k[1]:g}  T={TT[k]:g}  t*="
+            + ("none" if ts is None else f"{ts:.4f}"))
 
 
 def lnm_panel(ax, k, lim):
@@ -118,7 +123,7 @@ def lnm_zoom_panel(ax, k, clip):
     yc = float(np.interp(ts, t, y))
     lo, hi = ts - 0.15, ts + 0.15
     if clip:
-        lo, hi = max(lo, 0.0), min(hi, T)
+        lo, hi = max(lo, 0.0), min(hi, TT[k])
     ax.set_xlim(lo, hi)
     ax.set_ylim(yc - 0.5, yc + 0.5)
     ax.axhline(yc, color="red", lw=0.6, ls=":")
@@ -164,7 +169,7 @@ figs = [(f"lnM_96x96_tau{TAU:g}.png", r"$\ln M(t)$", lnm_panel, None, ""),
         (f"second_derivative_96x96_tau{TAU:g}_ylim0.1.png", r"$d^2\ln M/dt^2$", d2_panel, 0.1,
          r"  (y-window $\pm$0.1; dotted = $\pm\tau$)")]
 for name, ylab, panel, lim, extra in figs:
-    fig, axes = plt.subplots(4, 4, figsize=(16, 12), sharex=(panel is not lnm_zoom_panel))
+    fig, axes = plt.subplots(4, 4, figsize=(16, 12), sharex=False)
     for i, a in enumerate(A):
         for j, b in enumerate(B):
             ax = axes[i, j]
@@ -174,7 +179,7 @@ for name, ylab, panel, lim, extra in figs:
                         ha="center", va="center", fontsize=9, color="0.5",
                         transform=ax.transAxes)
                 continue
-            ax.set_xlim(0, T)
+            ax.set_xlim(0, TT[(a, b)])
             panel(ax, (a, b), lim)
             ax.grid(True, alpha=0.3)
             ax.set_title(title((a, b)), fontsize=9)
@@ -183,7 +188,7 @@ for name, ylab, panel, lim, extra in figs:
             if j == 0 or (i, j - 1) in [(A.index(x), B.index(y)) for x, y in EXCLUDED]:
                 ax.set_ylabel(ylab)
             ax.tick_params(labelbottom=True)
-    head = f"{ylab}, 96x96, v=1, N=4, T=1{extra}"
+    head = f"{ylab}, 96x96, v=1, N=4, T = 1 (job 0b8d4022), T = 4 where the panel says so (job 54cdf1f3){extra}"
     if panel is d2_panel:
         head += "\n" + STEP_LINE
     fig.suptitle(f"{head}\n{NOTE}", fontsize=11)
