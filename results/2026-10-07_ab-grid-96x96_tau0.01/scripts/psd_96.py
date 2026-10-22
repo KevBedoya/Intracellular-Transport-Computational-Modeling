@@ -114,6 +114,10 @@ for key, label, stem in methods:
                     ax.set_xlim(r["w"][lo], r["w"][hi - 1])
                 else:
                     ax.loglog(r["w"][1:], r[key][1:], lw=0.8, color="C0")
+                    ax.text(0.03, 0.04, rf"H = {H:.4e},  $\Delta\omega$ = {r['w'][1]:.4f}",
+                            transform=ax.transAxes, ha="left", va="bottom", fontsize=7,
+                            color="0.2", bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                                                   ec="0.7", alpha=0.85))
                     peaks.append(dict(method=label, a=a, b=b, T=r["T"], k=kp,
                                       omega_peak=wp, psd_peak=pp))
                 ax.axvline(wp, color="red", lw=1.0)
@@ -126,8 +130,14 @@ for key, label, stem in methods:
                     ax.set_ylabel(r"$|\mathcal{F}[y'']|^2$")
         rng = (rf"zoom: $\pm${ZOOM_BINS} bins ($\Delta\omega = 2\pi/T$) about the peak" if zoom
                else "full range, log-log")
-        fig.suptitle(rf"$|\mathcal{{F}}[d^2\ln M/dt^2](\omega)|^2$ -- {label} -- "
-                     f"96x96, v=1, N=4  ({rng}); red = peak", fontsize=12)
+        head =(rf"$|\mathcal{{F}}[d^2\ln M/dt^2](\omega)|^2$ -- {label} -- "
+                f"96x96, v=1, N=4  ({rng}); red = peak")
+        if not zoom:
+            head += ("\n" + rf"H = {H:.6e} = time between the $y''$ samples transformed "
+                     rf"({s} solver samples $\times$ {h:.6e})" + "\n"
+                     rf"$\Delta\omega = 2\pi/(NH) = 2\pi/T$ = spacing between frequency points;  "
+                     rf"Nyquist $\pi/H$ = {np.pi / H:.4g}")
+        fig.suptitle(head, fontsize=12)
         fig.tight_layout()
         fig.savefig(os.path.join(OUT, f"psd_{stem}_96x96_{'peak_zoom' if zoom else 'full'}.png"),
                     dpi=110)

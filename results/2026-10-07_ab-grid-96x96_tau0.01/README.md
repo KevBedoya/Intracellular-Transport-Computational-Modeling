@@ -7,7 +7,7 @@ Sources (96×96, v = 1, N_LIST = [0, 24, 48, 72], GPU, all sixteen pairs
 - job `54cdf1f3` — the eight b ≤ 1 pairs to **T = 4**, still running. Each
   pair switches to its T = 4 series once that pair has finished (its final
   state saved); panels and table rows say which T they use. Done so far
-  (2026-10-22): (0.1, 0.1), (0.1, 1), (1, 0.1), (1, 1), (10, 0.1). The job
+  (2026-10-22): (0.1, 0.1), (0.1, 1), (1, 0.1), (1, 1), (10, 0.1), (10, 1). The job
   restarted from the first pair on 2026-10-17, so `scripts/t4_source.py` only
   counts final states saved by that run (see its docstring).
 
@@ -28,16 +28,15 @@ just after the last one where the criterion's function exceeds τ = 0.01.
 | (100, 10), (1, 10), (10, 10) | 1 | 0.729, 0.750, 0.876 |
 | (0.1, 1), (0.1, 0.1) | 4 | 1.545, 1.851 |
 | (1, 1), (1, 0.1) | 4 | 2.304, 2.888 |
-| (10, 0.1) | 4 | 3.435 |
-| (10, 1), (100, 0.1), (100, 1) | 1 (T = 4 pending) | none |
+| (10, 1), (10, 0.1) | 4 | 2.908, 3.435 |
+| (100, 0.1), (100, 1) | 1 (T = 4 pending) | none |
 
 With slow switching onto the advective layer (b ≤ 1) y″ oscillates about zero
-with shrinking swings before it settles; at T = 4 the first five such pairs
+with shrinking swings before it settles; at T = 4 the first six such pairs
 settle at t* = 1.5–3.4, later for smaller b and larger a. (10, 0.1) only just
 qualifies: after t* = 3.435 y″ swings back up to 0.00993 at t ≈ 3.74, 0.7%
-under τ, so that t* is marginal. The three still at T = 1 have |y″| well above
-τ at the end of that run (oscillating for a = 10; still bending at −0.2 to −0.7
-for a = 100). (100, 0.1) and (100, 1) are also
+under τ, so that t* is marginal. The two still at T = 1 have |y″| well above
+τ at the end of that run (still bending at −0.2 to −0.7). They are also
 strongly grid-dependent (late decay rate ~0.4 at 16×16, ~0.6 at 32×32, ~1.2 at
 96×96).
 
@@ -61,9 +60,9 @@ after t*; here that is a column, not applied.
 - `t_star_kappa_96x96_tau0.01.csv`, `t_star_table_kappa_96x96_tau0.01.png` —
   t*, m*, M(T), κ(T) and whether ≥ 0.1 of run follows t*
 
-κ gives a t* for thirteen pairs: 0.274–0.301 for b ≥ 10 and (0.1, 1), 0.494 for
+κ gives a t* for fourteen pairs: 0.274–0.301 for b ≥ 10 and (0.1, 1), 0.494 for
 (10, 10), 0.574 for (100, 10), 0.997 for (0.1, 0.1), and 1.450 / 1.563 /
-2.338 for (1, 1) / (1, 0.1) / (10, 0.1) at T = 4. The (0.1, 0.1) value looked like an end-of-run
+1.822 / 2.338 for (1, 1) / (1, 0.1) / (10, 1) / (10, 0.1) at T = 4. The (0.1, 0.1) value looked like an end-of-run
 artifact at T = 1 (κ dipped under τ only in the last samples); at T = 4 it is
 unchanged and κ stays under τ to t = 4, so it was the real onset. Dividing by
 y′² makes κ smaller than |y″| wherever the decay is fast (|y′| ≈ 5), so κ t*
@@ -87,7 +86,8 @@ difference above, and the second derivative of a Chebyshev fit of ln M on
 - `psd_central_difference_96x96_full.png`, `psd_chebyshev_96x96_full.png` —
   full range up to Nyquist (π/H ≈ 3.1e4), log-log; red line at the peak, the
   largest |F|² over the plotted bins k ≥ 1 (ω = 0 is off the log axis), value
-  in each panel title
+  in each panel title; H (time between the transformed y″ samples), Δω =
+  2π/T (spacing between frequency points) and π/H in the title and each panel
 - `..._peak_zoom.png` — the same spectra, ±8 bins (Δω = 2π/T) about the peak
 - `psd_peaks_96x96.csv` — ω_peak per pair and method; `psd_96x96.npz` (ω and
   both spectra per pair), `psd_summary_96x96.csv` (Chebyshev degree and
@@ -95,8 +95,7 @@ difference above, and the second derivative of a Chebyshev fit of ln M on
 
 Both methods give the same ω_peak for every pair. Where the curve falls
 monotonically (b ≥ 10 except a = 100, and (100, 100)) the peak is just the
-first plotted bin, 2π/T. (10, 1) uses its T = 4 series here (finished
-2026-10-22, after the t* figures above were made).
+first plotted bin, 2π/T.
 
 `scripts/psd_96.py [t1_dir]`.
 
