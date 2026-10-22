@@ -77,6 +77,29 @@ A line through log10 M at t = 0.4 and t = 0.5, extended to M = 1
 `lnM_line_intercept_96x96.png` (with the line and its two points), `_zoom.png`
 (t* ± 0.15, ln M in [−0.5, 0.5]), and `t_star_line_intercept_96x96.csv`.
 
+## `psd/` — |F[y″](ω)|²
+
+The squared magnitude of the Fourier transform of y″, for each pair, from two
+second derivatives on the same grid t_n = nH (H ≈ 1.0e-4): the central
+difference above, and the second derivative of a Chebyshev fit of ln M on
+[0, T]. P(ω) = |H Σ y″(t_n) e^{−iωt_n}|², no window, ω in rad per unit t.
+
+- `psd_central_difference_96x96_full.png`, `psd_chebyshev_96x96_full.png` —
+  full range up to Nyquist (π/H ≈ 3.1e4), log-log; red line at the peak, the
+  largest |F|² over the plotted bins k ≥ 1 (ω = 0 is off the log axis), value
+  in each panel title
+- `..._peak_zoom.png` — the same spectra, ±8 bins (Δω = 2π/T) about the peak
+- `psd_peaks_96x96.csv` — ω_peak per pair and method; `psd_96x96.npz` (ω and
+  both spectra per pair), `psd_summary_96x96.csv` (Chebyshev degree and
+  residual, and how far its y″ is from the central difference)
+
+Both methods give the same ω_peak for every pair. Where the curve falls
+monotonically (b ≥ 10 except a = 100, and (100, 100)) the peak is just the
+first plotted bin, 2π/T. (10, 1) uses its T = 4 series here (finished
+2026-10-22, after the t* figures above were made).
+
+`scripts/psd_96.py [t1_dir]`.
+
 ## Reproducing
 
 `scripts/tau_mask_96.py [tau]`, `scripts/kappa_96.py [tau]` and
