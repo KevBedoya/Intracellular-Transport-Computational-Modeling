@@ -109,11 +109,11 @@ for key, label, stem in methods:
                 if zoom:
                     # neighbourhood of the peak: ZOOM_BINS bins either side
                     lo, hi = max(1, kp - ZOOM_BINS), kp + ZOOM_BINS + 1
-                    ax.semilogy(r["w"][lo:hi], r[key][lo:hi], lw=1.0, color="C0",
+                    ax.plot(r["w"][lo:hi], r[key][lo:hi], lw=1.0, color="C0",
                                 marker=".", ms=4)
                     ax.set_xlim(r["w"][lo], r["w"][hi - 1])
                 else:
-                    ax.loglog(r["w"][1:], r[key][1:], lw=0.8, color="C0")
+                    ax.semilogx(r["w"][1:], r[key][1:], lw=0.8, color="C0")
                     ax.text(0.03, 0.04, rf"H = {H:.4e},  $\Delta\omega$ = {r['w'][1]:.4f}",
                             transform=ax.transAxes, ha="left", va="bottom", fontsize=7,
                             color="0.2", bbox=dict(boxstyle="round,pad=0.2", fc="white",
@@ -129,7 +129,7 @@ for key, label, stem in methods:
                 if j == 0:
                     ax.set_ylabel(r"$|\mathcal{F}[y'']|^2$")
         rng = (rf"zoom: $\pm${ZOOM_BINS} bins ($\Delta\omega = 2\pi/T$) about the peak" if zoom
-               else "full range, log-log")
+               else "full range, log x, linear y")
         head =(rf"$|\mathcal{{F}}[d^2\ln M/dt^2](\omega)|^2$ -- {label} -- "
                 f"96x96, v=1, N=4  ({rng}); red = peak")
         if not zoom:

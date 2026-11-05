@@ -84,11 +84,13 @@ difference above, and the second derivative of a Chebyshev fit of ln M on
 [0, T]. P(ω) = |H Σ y″(t_n) e^{−iωt_n}|², no window, ω in rad per unit t.
 
 - `psd_central_difference_96x96_full.png`, `psd_chebyshev_96x96_full.png` —
-  full range up to Nyquist (π/H ≈ 3.1e4), log-log; red line at the peak, the
-  largest |F|² over the plotted bins k ≥ 1 (ω = 0 is off the log axis), value
-  in each panel title; H (time between the transformed y″ samples), Δω =
-  2π/T (spacing between frequency points) and π/H in the title and each panel
-- `..._peak_zoom.png` — the same spectra, ±8 bins (Δω = 2π/T) about the peak
+  full range up to Nyquist (π/H ≈ 3.1e4), log x, linear y; red line at the
+  peak, the largest |F|² over the plotted bins k ≥ 1 (ω = 0 is off the log
+  axis), value in each panel title; H (time between the transformed y″
+  samples), Δω = 2π/T (spacing between frequency points) and π/H in the title
+  and each panel
+- `..._peak_zoom.png` — the same spectra, ±8 bins (Δω = 2π/T) about the peak,
+  both axes linear
 - `psd_peaks_96x96.csv` — ω_peak per pair and method; `psd_96x96.npz` (ω and
   both spectra per pair), `psd_summary_96x96.csv` (Chebyshev degree and
   residual, and how far its y″ is from the central difference)
