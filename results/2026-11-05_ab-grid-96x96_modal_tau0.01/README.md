@@ -34,7 +34,8 @@ Every figure is a 4x4 grid in the 10-07 layout: rows are a, columns are b, one p
 | `d2lnM_exact_over_central_difference.png` | the only superimposed figure: exact modal y'' (green) over the central difference (wide blue), ±0.1 |
 | `lnM.png`, `lnM_t_star.png` | ln M(t), and the same with t* marked |
 | `psd_y2.png` | \|F[y'']\|² on linear axes, each panel zoomed on its peak: red = peak, shaded = FWHM, dashed = left half-maximum crossing |
-| `summary_96x96_modal.csv` | per pair: t*, m*, the central-difference-rule t*, lambda_1, lambda_2, the PSD peak and FWHM, and max \|exact − central difference\| for t > 0.05 |
+| `summary_96x96_modal.csv` | per pair: t*, m* = M(t*), M(10 t*) (`m_at_10_t_star`, from the modal series, since 10 t* is past T = 4 for every pair), the central-difference-rule t*, lambda_1, lambda_2, the PSD peak and FWHM, and max \|exact − central difference\| for t > 0.05 |
+| `t_star_m_10t_star_96x96_modal.pdf` | table of t*, 10 t* and M(10 t*) per (a, b) (`scripts/table_pdf.py`) |
 | `scripts/` | submit, wait and figure scripts, plus the job ids |
 
 ## Agreement with the 10-07 time-stepper

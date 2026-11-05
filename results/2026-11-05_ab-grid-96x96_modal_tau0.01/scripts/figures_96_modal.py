@@ -60,8 +60,12 @@ for a in AB:
         spec = y2s.spectrum(y, H)
         # the 10-07 rule (right sweep on the central difference) on these samples
         rule = launch._char_time_onset(M, H, tau=TAU, spacing=H)
+        ts = ct.loc[(a, b), "t_star"]
+        # M at t* (checks against the job's m*) and at 10 t*, from the modal series
+        m_ts, m_10ts = (np.exp(mam.ln_mass(modes, [ts, 10 * ts])) if np.isfinite(ts)
+                        else (np.nan, np.nan))
         series[(a, b)] = dict(t=t, y=y, tc=t[1:-1], cd=cd, exact=exact, spec=spec, H=H,
-                              cd_t_star=rule["t_star"])
+                              cd_t_star=rule["t_star"], m_ts=m_ts, m_10ts=m_10ts)
         print(f"{label(a, b)}: H={H:.6e}, t*={ct.loc[(a, b), 't_star']:.6f}, "
               f"central-difference rule t*={rule['t_star']:.6f}", flush=True)
 
@@ -155,6 +159,8 @@ rows = []
 for (a, b), s in series.items():
     r = ct.loc[(a, b)]
     rows.append(dict(a=a, b=b, t_star=r["t_star"], m_star=r["m_star"],
+                     m_at_t_star_recomputed=s["m_ts"], ten_t_star=10 * r["t_star"],
+                     m_at_10_t_star=s["m_10ts"],
                      central_difference_t_star=s["cd_t_star"],
                      lambda_1=r["lambda_1"], lambda_2=r["lambda_2"], lambda_2_imag=r["lambda_2_imag"],
                      fit_slope=r["fit_slope"],
