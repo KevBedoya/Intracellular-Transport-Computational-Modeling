@@ -65,6 +65,61 @@ directly comparable to a previously published CPU number at full precision, use
 The GPU path does not support `d_tube != 0` or off-centre initial conditions.
 Requesting `"gpu"` with either is rejected at submission with a 400.
 
+For all three, `device` only matters with `"engine": "time_stepper"` (the
+default for `Mass Analysis`). The `"modal"` engine (the default for the two
+characteristic-time computations) has no time-stepping loop to place (see [Choosing an engine](#choosing-an-engine-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid)),
+so `device` is accepted and ignored there.
+
+### Choosing an engine (`Mass Analysis`, `Characteristic Time (mass vs v)`, `Characteristic Time (a,b grid)`)
+
+| value | behaviour |
+|---|---|
+| `"modal"` | **The default for the characteristic time.** Builds the solver's own one-step operator, diagonalises it once and reads M(t) off the modal sum M(t) = Σ aₙ e^(−λₙ t). t* is the right-sweep rule applied to the **exact** y'' of that sum (no differencing), with the crossing of \|y''\| = tau root-found rather than snapped to a sample. Also returns `lambda_1` and `lambda_2`. Seconds per point **whatever `T_param` is**. |
+| `"time_stepper"` | **The default for `Mass Analysis`.** The full solve to `T_param`, as before 2026-11-04; t* from the central difference of the sampled series, at sample resolution. The only engine that uses `device`, `mass_checkpoint` and `extend_from`. |
+
+The two agree on `t*` to within **1.0e-5** and on `m*` to **6e-5** relative on
+every 96×96 pair with a finite t* at `tau = 0.01`, and the underlying M(t) agrees
+to round-off (`results/2026-11-04_modal-mass-analysis-validation/`). Numbers are
+not bit-identical across engines: compare like with like.
+
+For `Mass Analysis`, `"modal"` fills the same five series at the same samples
+from the modal sum, and writes the same files. Its worst total-mass difference
+from the time-stepper is 1.8e-10 at 64×64 and 1.7e-9 at 96×96, and grows as
+about G^4.45 — the time-stepper's own accumulated round-off
+(`results/2026-11-04_modal-mass-analysis-validation/`). There is no time loop,
+but the series still has `T_param / (5 dT)` samples to evaluate and write, so its
+cost does grow with `T_param`, though far more slowly than a solve does.
+
+With `"modal"`, `extend_from` is refused at submission (400) — the cost does not
+depend on T, so just submit the longer T — and `workers` is ignored: the points
+run one after another in the job's process, the eigensolve itself multithreaded.
+
+### The PSD of y'' (`compute_psd`)
+
+`Mass Analysis` and both characteristic-time computations accept
+`"compute_psd": true`. With it they also compute
+
+    P(ω) = | H Σₙ y''(tₙ) e^(−iωtₙ) |²,   y = ln(total mass),   tₙ = nH,
+
+the squared magnitude of the Fourier transform of `y''` over `[0, T_param]`, with
+no window and no detrending — the convention of
+`results/2026-10-07_ab-grid-96x96_tau0.01/scripts/psd_96.py`. `y''` is the
+central difference of `ln M` at `H ≈ 1e-4` on either engine. The modal engine
+could give `y''` exactly, but its early pulse is narrower than `H`, so point
+samples of it would misweight the low frequencies where the peak sits. The
+record is zero-padded 8×, so the peak and the crossing are not snapped to the
+`2π/T` bins (this adds no resolution).
+
+The figure plots `P` on **linear axes, zoomed on the peak**. It reports:
+
+- `psd_omega_peak`, `psd_peak` — where the largest `P` is (ω = 0 included), and its value.
+- `psd_fwhm` — **2 × the half-width on the left of the peak**, `2 (ω_peak − ω_left)`
+  with `P(ω_left) = P_peak / 2`. The right flank is not used, because leakage
+  from other modes can widen it.
+- `psd_fwhm_side` — `left` normally. It is `mirrored` when `P` stays above
+  half-maximum all the way to ω = 0; `P` is even in ω, so the crossing is then
+  read on the negative side (a peak at ω = 0 is FWHM = 2 × its right crossing).
+
 ### Checking on it
 
 ```bash
@@ -124,6 +179,11 @@ defaults, and a one-line hint for each.
 ---
 
 ## Cost: read this before submitting a large grid
+
+Everything in this section is about the time-stepping loop. The characteristic-time
+computations on their default `"modal"` engine do not run it: their cost is an
+eigensolve per point, independent of `T_param` — seconds at 96×96 (measured
+figures in `server/estimate.py`, `_MODAL_POINTS`).
 
 Runtime is governed by the scheme's stability limit,
 `dT = 0.1 · dTheta² · dRad² / (2D)`, which gives `K ∝ G⁴` timesteps and
@@ -248,7 +308,7 @@ Dimensionless time for mass to fall to `mass_threshold`.
 #### `Characteristic Time (mass vs v)`
 Sweeps a list of velocities. For each, finds the characteristic time `t*` —
 the **onset of steady exponential decay** of the total mass — and reports the
-retained mass `m*` at `t*`.
+retained mass `m*` at `char_time_mult · t*` (at `t*` itself by default).
 
 `t*` is judged from the second derivative of `y = ln(total mass)`: the decay is
 steady where `ln M` is a straight line, i.e. `y'' = 0`. Each sample is marked
@@ -256,21 +316,39 @@ steady where `ln M` is a straight line, i.e. `y'' = 0`. Each sample is marked
 `t*` is the sample just after the last one with `l = 0`, so `|y''| ≤ tau` from
 `t*` to the end of the run. `y''` is a second-order central difference taken at
 a step of about 1e-4 in time (the double-precision rule of thumb), whatever the
-grid's own sample spacing. The fit columns in the CSV are a least-squares line
-through `log10(total mass)` over `[t*, T]`.
+grid's own sample spacing. That is the `"time_stepper"` engine; the default
+`"modal"` engine applies the same right sweep to the exact `y''` of the modal sum
+and root-finds the last crossing (see [Choosing an engine](#choosing-an-engine-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid)).
+The fit columns in the CSV are a least-squares line through `log10(total mass)`
+over `[t*, T]`.
 **Required:** `rg_param`, `ry_param`, `v_LIST` (list[float]), `w_param`, `T_param`, `N_LIST`
 **Optional:** `tau` (default `1e-3`) — the steady-decay threshold; smaller is
 stricter and gives a later `t*`.
-`device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`engine` — `modal` (default) or `time_stepper`. See [Choosing an engine](#choosing-an-engine-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`char_time_mult` (default `1`, range `[1, 10]`) — `m*` is `M(char_time_mult · t*)`;
+`10` reproduces the pre-2026-09-28 practice of reading the mass at `10·t*`. The
+modal engine evaluates M at any time, even past `T_param`; the time-stepper reads
+the nearest sample and writes `m_star` as NaN past `T_param`.
+`compute_psd` (default `false`) — also compute the power spectrum of `y''`; see [The PSD of y''](#the-psd-of-y-compute_psd).
+`device` — `cpu` (default), `gpu`, or `auto`; time-stepper only. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
 **Output:** `char_time_analysis/<timestamp>/`, and a job `result` of
-`{"output_dirs": [...], "csv": ..., "tau": ..., "t_star": [{"v", "t_star", "m_star"}, ...]}`
-— one entry per velocity, `t_star`/`m_star` `null` where no t* was found.
+`{"output_dirs": [...], "csv": ..., "tau": ..., "char_time_mult": ..., "engine": ...,
+"t_star": [{"v", "t_star", "m_star", "lambda_1", "lambda_2", "lambda_2_imag"}, ...]}`
+(each entry also carries the four `psd_` values with `compute_psd`)
+— one entry per velocity, `t_star`/`m_star` `null` where no t* was found, the
+`lambda` entries `null` from the time-stepper.
 The desktop app prints the same table in its output panel.
 - `char_t_analysis_data.csv` — one row per velocity: `v, t_star, m_star`, then
   `fit_slope, fit_intercept` (the line over the steady segment),
   `fit_window_t1, fit_window_t2` (that segment, `[t*, T]`),
-  `total_mass_at_t1, total_mass_at_t2` (the mass at its ends) and `tau`
+  `total_mass_at_t1, total_mass_at_t2` (the mass at its ends; `total_mass_at_t1`
+  is always `M(t*)`), `tau`, `char_time_mult`, and `lambda_1`, `lambda_2`,
+  `lambda_2_imag` — the slowest decay rate of M and the slowest excited rate
+  after it (real part, and the size of its imaginary part when it is one of a
+  complex pair); empty from the time-stepper. With `compute_psd`, also
+  `psd_omega_peak, psd_peak, psd_fwhm, psd_fwhm_side`
 - `char_t_analysis_plot.png` — `m*` against `v`, log x-axis
+- `char_t_psd_y2.png` — with `compute_psd`: one peak-zoom panel per velocity
 
 > **`T_param` must leave room for the decay to settle.** The onset is only
 > known after the solve. At `v = 1`, 16×16, `tau = 1e-3` it is about 0.5–0.7
@@ -287,21 +365,23 @@ The desktop app prints the same table in its output panel.
 > for 0.1 (2026-09-28 to 2026-10-05). Numbers from different definitions are
 > not comparable.
 >
-> One velocity per job is the usual choice: a `v_LIST` of five values costs five
-> full solves sequentially inside one job, whereas five separate jobs run four
-> at a time.
+> On the time-stepper, one velocity per job is the usual choice: a `v_LIST` of
+> five values costs five full solves sequentially inside one job, whereas five
+> separate jobs run four at a time. On the modal engine a point costs seconds,
+> so sweep freely.
 
 #### `Characteristic Time (a,b grid)`
 The same fit, swept over the two switch rates instead of over velocity. `a_list`
 holds the rates onto the diffusive layer, `b_list` the rates onto the advective
 layer, and **every pair in `a_list × b_list` is solved** — a 4×4 grid is sixteen
-full solves. `v_param` is a single value here, not a list: the grid is already
+eigensolves (seconds each) on the modal engine, sixteen full solves on the
+time-stepper. `v_param` is a single value here, not a list: the grid is already
 two-dimensional.
 **Required:** `rg_param`, `ry_param`, `a_list` (list[float]), `b_list` (list[float]), `v_param`, `T_param`, `N_LIST`
-**Optional:** `tau` (default `1e-3`), as above.
-`device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
-`workers` — how many points to solve at once on the CPU; `0` (default) uses one
-per core, less one.
+**Optional:** `tau` (default `1e-3`), `engine`, `char_time_mult`, `compute_psd`, as above.
+`device` — `cpu` (default), `gpu`, or `auto`; time-stepper only. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`workers` — time-stepper only: how many points to solve at once on the CPU; `0`
+(default) uses one per core, less one.
 **Output:** `ab_grid_char_time/<timestamp>/`, and a job `result` of the same
 shape as above with `a`, `b` in each `t_star` entry, plus `device`.
 
@@ -310,10 +390,11 @@ microtubule count and the grid — written as `v10000_N4_96x96` for the example
 above. They are not columns, so a file lifted out of its timestamped directory
 still says what produced it.
 
-- `ab_grid_char_t_<stem>.csv` — one row per `(a, b)`: `a, b, t_star, m_star`, then the fit columns (`fit_slope`, `fit_intercept`, the window, and the two masses it was fitted to)
+- `ab_grid_char_t_<stem>.csv` — one row per `(a, b)`: `a, b, t_star, m_star`, then the fit columns (`fit_slope`, `fit_intercept`, the window, and the two masses it was fitted to), `tau`, `char_time_mult` and the three `lambda` columns
 - `ab_grid_m_star_vs_a_<stem>.png` — `m*` against `a`, one curve per `b`
 - `ab_grid_m_star_vs_b_<stem>.png` — `m*` against `b`, one curve per `a`
 - `ab_grid_m_star_intensity_<stem>.png` — `m*` over the grid, `a` on the vertical axis and `b` on the horizontal, one square per solved point coloured by magnitude
+- `ab_grid_psd_y2_<stem>.png` — with `compute_psd`: one peak-zoom panel per `(a, b)`, `a` down and `b` across; the CSV gains the four `psd_` columns
 
 The two slice plots use a log x-axis when the rates span a decade or more and are
 all positive — which is the usual sweep — and a linear one otherwise, since `0`
@@ -358,11 +439,27 @@ curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
 #### `Mass Analysis`
 Mass on each layer as a function of time.
 **Required:** `rg_param`, `ry_param`, `v_param`, `a_param`, `b_param`, `T_param`, `N_LIST`
-**Optional:** `device` — `cpu` (default), `gpu`, or `auto`. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+**Optional:** `engine` — `time_stepper` (default) or `modal`. See [Choosing an engine](#choosing-an-engine-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`device` — `cpu` (default), `gpu`, or `auto`; time-stepper only. See [Choosing a device](#choosing-a-device-mass-analysis-characteristic-time-mass-vs-v-characteristic-time-ab-grid).
+`compute_psd` (default `false`) — see [The PSD of y''](#the-psd-of-y-compute_psd).
 **Output:** five CSV series under `mass_analysis_results/`, plus PNGs when
 `save_png` is true —
 `diffusive/`, `advective/`, `total/`, `advective_over_total/`,
-`advective_over_initial/`.
+`advective_over_initial/`; with `compute_psd`, `psd_y2/` holds the peak-zoom
+PNG and a one-row CSV of the peak and FWHM. The job `result` is
+`{"output_dirs": [...], "engine": ...}`, plus `"psd_y2": {"psd_omega_peak",
+"psd_peak", "psd_fwhm", "psd_fwhm_side", "H", "d_omega", "pad_factor"}` with
+`compute_psd`.
+
+```bash
+curl -s -X POST $ITCM/jobs -H 'Content-Type: application/json' -d '{
+  "computation": "Mass Analysis",
+  "params": {"rg_param": 96, "ry_param": 96, "v_param": 1, "a_param": 10,
+             "b_param": 0.1, "T_param": 4, "N_LIST": [0, 24, 48, 72],
+             "engine": "modal", "compute_psd": true},
+  "submitted_by": "your-name"
+}'
+```
 
 > This computation takes the two switch rates separately rather than a single
 > `w_param`; `a_param = b_param = w` reproduces exactly what it did before,

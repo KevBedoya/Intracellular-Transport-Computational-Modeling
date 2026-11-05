@@ -267,7 +267,9 @@ PARAMETER_SCHEMAS = {
             ("MA_collection_factor_limit", int(1e3)),
             ("save_png", True),
             ("show_plt", False),
-            ("device", "cpu")
+            ("device", "cpu"),
+            ("engine", "time_stepper"),
+            ("compute_psd", False)
         ]
     },
 
@@ -292,7 +294,10 @@ PARAMETER_SCHEMAS = {
             ("show_plt", False),
             ("device", "cpu"),
             ("tau", 1e-3),
-            ("extend_from", "")
+            ("extend_from", ""),
+            ("engine", "modal"),
+            ("char_time_mult", 1.0),
+            ("compute_psd", False)
         ],
         "approach": ["time-dependent"]
     },
@@ -320,7 +325,10 @@ PARAMETER_SCHEMAS = {
             ("device", "cpu"),
             ("workers", 0),
             ("tau", 1e-3),
-            ("extend_from", "")
+            ("extend_from", ""),
+            ("engine", "modal"),
+            ("char_time_mult", 1.0),
+            ("compute_psd", False)
         ],
         "approach": ["time-dependent"]
     },
@@ -477,6 +485,22 @@ PARAMETER_HINTS = {
             "|y''| of y = ln(total mass) stays at or below tau to the end of "
             "the run. Smaller is stricter and gives a later t*. "
             "Default 1e-3. (float)"),
+    "engine": ("engine: How M(t) is obtained. 'modal' diagonalises the solver's "
+               "one-step operator once and evaluates the exact modal sum -- for "
+               "the characteristic time (where it is the default) it also gives "
+               "lambda_1 and lambda_2, in seconds per point whatever T is. "
+               "'time_stepper' runs the full solve to T (the default for Mass "
+               "Analysis, and the only engine that uses device and extend_from). "
+               "The two agree on M(t) to ~1e-9 and on t* to ~1e-5 at 96x96. (str)"),
+    "char_time_mult": ("char_time_mult: m* is the mass at char_time_mult * t*. 1 "
+                       "(default) gives M(t*); older results read the mass at "
+                       "an integer multiple of t*. Range [1, 10]. (float)"),
+    "compute_psd": ("compute_psd: Also compute |F[y'']|^2 of y = ln(total mass) "
+                    "(y'' by central difference at spacing ~1e-4, record zero-padded "
+                    "8x), plot it on linear axes zoomed on its peak, and report the "
+                    "peak and FWHM. FWHM = 2 x the half-width measured on the left "
+                    "of the peak, so leakage on the right flank does not widen it. "
+                    "Default False. (boolean)"),
     "grid_list": "grid_list: Square grid sizes to sweep. Provide as a list of ints: []",
     "N_amount": "N_amount: Number of evenly spaced microtubules. (int)",
     "checkpoint": "checkpoint: Time- or mass-stamp at which data is collected. (float)",

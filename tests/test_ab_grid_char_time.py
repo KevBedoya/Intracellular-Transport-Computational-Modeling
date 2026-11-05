@@ -55,6 +55,10 @@ T = 1.0
 N_LIST = np.array([0, 4, 8, 12], dtype=np.int64)
 V = 100.0
 
+# The modal engine is the default; tests about the time-stepping loop itself --
+# worker processes, devices -- select the time-stepper explicitly.
+STEP = dict(engine="time_stepper")
+
 A_LIST = [1.0, 10.0]
 B_LIST = [1.0, 10.0]
 
@@ -140,9 +144,9 @@ def test_parallel_matches_sequential():
     layer buffer -- which is exactly the failure this catches.
     """
     one = _rows(launch.collect_ab_grid_char_time(
-        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=1))
+        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=1, **STEP))
     many = _rows(launch.collect_ab_grid_char_time(
-        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=4))
+        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=4, **STEP))
 
     assert list(one["a"]) == list(many["a"]), "row order changed under workers"
     assert list(one["b"]) == list(many["b"]), "row order changed under workers"
@@ -292,6 +296,11 @@ def test_router_result_reaches_the_gui_and_the_api():
         assert len(lines) == n + 1 and "t*" in lines[1], lines
     assert grid["tau"] == 0.01 and sweep["tau"] == launch.CHAR_TIME_TAU
     assert [(r["a"], r["b"]) for r in grid["t_star"]] == [(1.0, 10.0), (10.0, 10.0)]
+    # the default engine, and what it adds to every row
+    assert grid["engine"] == sweep["engine"] == "modal"
+    assert grid["char_time_mult"] == 1.0
+    for row in grid["t_star"] + sweep["t_star"]:
+        assert row["lambda_1"] > 0 and row["lambda_2"] > row["lambda_1"], row
 
 
 def test_invalid_input_is_refused():
@@ -304,6 +313,9 @@ def test_invalid_input_is_refused():
         (dict(a_list=[1.0], b_list=[1.0], T_param=1e-3), "too short"),
         (dict(a_list=[1.0], b_list=[1.0], tau=0.0), "tau must be"),
         (dict(a_list=[1.0], b_list=[1.0], device="cuda:0"), "unknown device"),
+        (dict(a_list=[1.0], b_list=[1.0], engine="spectral"), "unknown engine"),
+        (dict(a_list=[1.0], b_list=[1.0], char_time_mult=0.5), "char_time_mult"),
+        (dict(a_list=[1.0], b_list=[1.0], char_time_mult=11.0), "char_time_mult"),
     ]
     for overrides, expected in cases:
         kwargs = dict(rg_param=RG, ry_param=RY, v_param=V, T_param=T,
@@ -318,6 +330,72 @@ def test_invalid_input_is_refused():
             raise AssertionError(f"{overrides} was accepted but should not be")
 
 
+# Modal vs time-stepper. Both apply the right-sweep rule, the time-stepper to a
+# central difference of its samples (t* at sample resolution, 5 dT = 1.5e-4 at
+# 16x16), the modal engine to the exact y'' with the crossing root-found. The
+# t* agree to about a sample; the masses read there to lambda_1 times that.
+MODAL_T_STAR_TOLERANCE = 5e-4
+MODAL_MASS_TOLERANCE = 5e-3                 # relative
+MODAL_SLOPE_TOLERANCE = 1e-4                # relative
+
+
+def test_modal_engine_matches_the_time_stepper():
+    modal = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False))
+    step = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=1, **STEP))
+    assert modal["t_star"].notna().all() and step["t_star"].notna().all()
+    dt = np.abs(modal["t_star"] - step["t_star"]).max()
+    assert dt < MODAL_T_STAR_TOLERANCE, f"t* differs by {dt:.2e}"
+    dm = np.abs(modal["m_star"] / step["m_star"] - 1).max()
+    assert dm < MODAL_MASS_TOLERANCE, f"m* differs by {dm:.2e} relative"
+    ds = np.abs(modal["fit_slope"] / step["fit_slope"] - 1).max()
+    assert ds < MODAL_SLOPE_TOLERANCE, f"fit slope differs by {ds:.2e} relative"
+    # lambda_1 is the tail decay rate the fit measures: -ln 10 * slope
+    tail = -np.log(10) * modal["fit_slope"]
+    assert np.allclose(modal["lambda_1"], tail, rtol=1e-3), (modal["lambda_1"], tail)
+    assert (modal["lambda_2"] > modal["lambda_1"]).all()
+    assert step["lambda_1"].isna().all(), "the time-stepper has no eigenvalues to report"
+
+
+def test_char_time_mult_moves_m_star_only():
+    """m* is M(char_time_mult * t*); t* and the fit do not depend on it."""
+    one = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [10.0], [10.0], V, T, N_LIST, show_plt=False)).iloc[0]
+    three = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [10.0], [10.0], V, T, N_LIST, show_plt=False,
+        char_time_mult=3)).iloc[0]
+    assert one["char_time_mult"] == 1 and three["char_time_mult"] == 3
+    assert one["t_star"] == three["t_star"]
+    assert one["m_star"] == one["total_mass_at_t1"] == three["total_mass_at_t1"]
+    # past t* the decay is a single exponential, so M(3 t*) = M(t*) e^{-2 lambda_1 t*}
+    predicted = one["m_star"] * math.exp(-2 * one["lambda_1"] * one["t_star"])
+    assert math.isclose(three["m_star"], predicted, rel_tol=1e-3), (three["m_star"], predicted)
+    # the time-stepper reads the nearest sample, and agrees
+    step = _rows(launch.collect_ab_grid_char_time(
+        RG, RY, [10.0], [10.0], V, 3.0, N_LIST, show_plt=False, workers=1,
+        char_time_mult=3, **STEP)).iloc[0]
+    assert math.isclose(step["m_star"], three["m_star"], rel_tol=MODAL_MASS_TOLERANCE)
+
+
+def test_psd_of_y2_on_both_engines():
+    """compute_psd adds the PSD columns and figure; both engines transform the same samples."""
+    plain = launch.collect_ab_grid_char_time(
+        RG, RY, [1.0], [10.0], V, T, N_LIST, show_plt=False)
+    assert "psd_peak" not in _rows(plain).columns and "psd_y2" not in plain["plots"]
+    modal = launch.collect_ab_grid_char_time(
+        RG, RY, [1.0], [10.0], V, T, N_LIST, show_plt=False, compute_psd=True)
+    step = launch.collect_ab_grid_char_time(
+        RG, RY, [1.0], [10.0], V, T, N_LIST, show_plt=False, workers=1, compute_psd=True,
+        **STEP)
+    assert os.path.isfile(modal["plots"]["psd_y2"])
+    m, s = _rows(modal).iloc[0], _rows(step).iloc[0]
+    for key in ("psd_omega_peak", "psd_peak", "psd_fwhm"):
+        assert np.isfinite(m[key]), key
+        assert math.isclose(m[key], s[key], rel_tol=1e-3, abs_tol=1e-9), (key, m[key], s[key])
+    assert m["psd_fwhm_side"] == s["psd_fwhm_side"]
+
+
 def test_gpu_matches_cpu_within_tolerance():
     """The GPU grid must agree with the CPU grid to the stated tolerance.
 
@@ -330,9 +408,10 @@ def test_gpu_matches_cpu_within_tolerance():
 
     cpu = _rows(launch.collect_ab_grid_char_time(
         RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, workers=1,
-        device="cpu"))
+        device="cpu", **STEP))
     result = launch.collect_ab_grid_char_time(
-        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, device="gpu")
+        RG, RY, A_LIST, B_LIST, V, T, N_LIST, show_plt=False, device="gpu",
+        **STEP)
     gpu = _rows(result)
 
     assert result["device"] == "gpu", "device=gpu did not run on the GPU"
@@ -362,7 +441,7 @@ def test_gpu_refuses_unsupported_configurations():
     try:
         launch.collect_ab_grid_char_time(
             RG, RY, [1.0], [1.0], V, T, N_LIST, show_plt=False,
-            device="gpu", d_tube=0.05)
+            device="gpu", d_tube=0.05, **STEP)
     except GpuUnsupported as e:
         assert "d_tube" in str(e), f"unexpected refusal message: {e}"
     else:
@@ -373,7 +452,7 @@ def test_auto_falls_back_when_the_gpu_cannot_run_it():
     """device='auto' with an unsupported option must still produce results."""
     result = launch.collect_ab_grid_char_time(
         RG, RY, [1.0], [1.0], V, T, N_LIST, show_plt=False,
-        device="auto", d_tube=0.05)
+        device="auto", d_tube=0.05, **STEP)
     assert result["device"] == "cpu", \
         "auto should fall back to the CPU when d_tube != 0"
     assert os.path.isfile(result["csv"])

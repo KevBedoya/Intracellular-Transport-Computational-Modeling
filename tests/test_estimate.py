@@ -22,6 +22,10 @@ import estimate  # noqa: E402
 
 CT = "Characteristic Time (mass vs v)"
 AB = "Characteristic Time (a,b grid)"
+# The time-stepper's cost model is what most of these tests measure; the
+# characteristic-time computations default to the modal engine, so they name
+# the time-stepper explicitly.
+STEP = {"engine": "time_stepper"}
 
 
 def test_steps_matches_the_solver():
@@ -41,7 +45,7 @@ def test_steps_matches_the_solver():
 
 def _hours(rg, ry, device, T=1.0, v_list=(10000,)):
     p = {"rg_param": rg, "ry_param": ry, "T_param": T,
-         "v_LIST": list(v_list), "device": device}
+         "v_LIST": list(v_list), "device": device, **STEP}
     return estimate.seconds(CT, p) / 3600.0
 
 
@@ -93,7 +97,7 @@ def test_velocity_sweep_scales():
     totals directly would bake in the startup constant and break whenever it is
     retuned, so the fixed cost is removed from both sides first.
     """
-    base = {"rg_param": 96, "ry_param": 96, "T_param": 1, "device": "cpu"}
+    base = {"rg_param": 96, "ry_param": 96, "T_param": 1, "device": "cpu", **STEP}
     one = estimate.seconds(CT, dict(base, v_LIST=[1e4]))
     three = estimate.seconds(CT, dict(base, v_LIST=[1e3, 1e4, 1e5]))
     s1 = one - estimate.STARTUP_SECONDS
@@ -133,20 +137,20 @@ def test_ab_grid_costs_rounds_on_cpu_and_points_on_gpu():
     fail whenever STARTUP_SECONDS is retuned.
     """
     base = {"rg_param": 96, "ry_param": 96, "T_param": 1,
-            "a_list": [1, 10, 100], "b_list": [1, 10, 100], "workers": 3}
+            "a_list": [1, 10, 100], "b_list": [1, 10, 100], "workers": 3, **STEP}
 
     def solve_only(params, device):
         return estimate.seconds(AB, params, device=device) - estimate.STARTUP_SECONDS
 
     one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96, "T_param": 1,
-                                "device": "cpu"}) - estimate.STARTUP_SECONDS
+                                "device": "cpu", **STEP}) - estimate.STARTUP_SECONDS
 
     cpu = solve_only(dict(base, device="cpu"), "cpu")
     assert abs(cpu / one - 3.0) < 1e-9, \
         f"9 points over 3 workers should cost 3 solves, got {cpu/one:.4f}"
 
     gpu_one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96,
-                                    "T_param": 1, "device": "gpu"}) \
+                                    "T_param": 1, "device": "gpu", **STEP}) \
         - estimate.STARTUP_SECONDS
     gpu = solve_only(dict(base, device="gpu"), "gpu")
     assert abs(gpu / gpu_one - 9.0) < 1e-9, \
@@ -156,11 +160,43 @@ def test_ab_grid_costs_rounds_on_cpu_and_points_on_gpu():
 def test_ab_grid_rounds_up_a_ragged_last_round():
     """5 points over 2 workers is 3 rounds, not 2.5."""
     base = {"rg_param": 96, "ry_param": 96, "T_param": 1, "device": "cpu",
-            "a_list": [1, 10, 100, 1000, 10000], "b_list": [1], "workers": 2}
+            "a_list": [1, 10, 100, 1000, 10000], "b_list": [1], "workers": 2,
+            **STEP}
     one = estimate.seconds(CT, {"rg_param": 96, "ry_param": 96, "T_param": 1,
-                                "device": "cpu"}) - estimate.STARTUP_SECONDS
+                                "device": "cpu", **STEP}) - estimate.STARTUP_SECONDS
     five = estimate.seconds(AB, base) - estimate.STARTUP_SECONDS
     assert abs(five / one - 3.0) < 1e-9, f"expected 3 rounds, got {five/one:.4f}"
+
+
+def test_modal_engine_cost_does_not_depend_on_T():
+    """The modal engine has no time loop: T must not move its estimate, a grid
+    costs one point per (a, b), and it is far cheaper than the time-stepper."""
+    base = {"rg_param": 96, "ry_param": 96, "a_list": [1, 10], "b_list": [1, 10]}
+    short = estimate.seconds(AB, dict(base, T_param=1))
+    long_ = estimate.seconds(AB, dict(base, T_param=100))
+    assert short == long_
+    one = estimate.seconds(AB, dict(base, T_param=1, a_list=[1], b_list=[1]))
+    s1, s4 = one - estimate.STARTUP_SECONDS, short - estimate.STARTUP_SECONDS
+    assert abs(s4 / s1 - 4.0) < 1e-9
+    stepper = estimate.seconds(AB, dict(base, T_param=1, **STEP))
+    assert short < stepper / 100
+    assert estimate.describe(AB, dict(base, T_param=1))["basis"]["engine"] == "modal"
+
+
+def test_modal_mass_analysis_estimate():
+    """Mass Analysis stays on the time-stepper unless asked; on the modal engine it is
+    far cheaper, but still grows with T, since every sample is evaluated and written."""
+    MA = "Mass Analysis"
+    base = {"rg_param": 64, "ry_param": 64, "T_param": 1}
+    stepper = estimate.seconds(MA, base)
+    assert stepper == estimate.seconds(MA, dict(base, **STEP))
+    modal = estimate.seconds(MA, dict(base, engine="modal"))
+    assert modal < stepper / 10
+    assert estimate.seconds(MA, dict(base, engine="modal", T_param=4)) > modal
+    basis = estimate.describe(MA, dict(base, engine="modal"))["basis"]
+    assert basis["engine"] == "modal" and basis["samples"] > 0
+    # measured 2026-11-04: 52 s end to end at 64x64, T = 1, CSVs and PNGs included
+    assert 30 < modal < 120, modal
 
 
 def test_unestimable_returns_none():

@@ -104,6 +104,10 @@ _OPTIONAL_TYPE_OVERRIDES = {
 _CHAR_TIME_COMPUTATIONS = {"Characteristic Time (mass vs v)",
                             "Characteristic Time (a,b grid)"}
 
+# Computations with an ``engine``: "time_stepper" or "modal" (the eigen-modal
+# expansion, computational_tools/mass_analysis_modal.py).
+_ENGINE_COMPUTATIONS = _CHAR_TIME_COMPUTATIONS | {"Mass Analysis"}
+
 
 def _schema_for(computation_name):
     from gui_components.params_config import PARAMETER_SCHEMAS
@@ -287,17 +291,51 @@ def validate_params(computation_name, params):
         if v is not None and v < 0:
             errors[key] = "switch rates must be non-negative"
 
+    # The engine decides whether there is a time-stepping loop at all: the modal
+    # expansion has none, so device and extend_from (which place and continue
+    # that loop) mean nothing to it. device is ignored there, since "cpu" is its
+    # default and a job written for the time-stepper should still run; a
+    # continuation request is refused rather than silently dropped.
+    # The mass analysis takes the same two engines, but defaults to the
+    # time-stepper.
+    modal = False
+    if computation_name in _ENGINE_COMPUTATIONS:
+        from launch_functions.launch import (CHAR_TIME_ENGINES, CHAR_TIME_ENGINE_MODAL,
+                                             MASS_ANALYSIS_ENGINE_DEFAULT)
+
+        engine = clean.get("engine", CHAR_TIME_ENGINE_MODAL
+                           if computation_name in _CHAR_TIME_COMPUTATIONS
+                           else MASS_ANALYSIS_ENGINE_DEFAULT)
+        norm = str(engine).strip().lower()
+        if norm not in CHAR_TIME_ENGINES:
+            errors["engine"] = f"must be one of {', '.join(CHAR_TIME_ENGINES)}"
+        else:
+            if "engine" in clean:
+                clean["engine"] = norm
+            modal = norm == CHAR_TIME_ENGINE_MODAL
+            if modal and not _is_blank(clean.get("extend_from")):
+                errors["extend_from"] = (
+                    "applies to engine='time_stepper' only; the modal engine's "
+                    "cost does not depend on T, so solve the longer T directly")
+
     if computation_name in _CHAR_TIME_COMPUTATIONS:
+        from launch_functions.launch import CHAR_TIME_MULT_RANGE
+
         tau = clean.get("tau")
         if tau is not None and not tau > 0:
             errors["tau"] = "must be a positive threshold"
+
+        lo, hi = CHAR_TIME_MULT_RANGE
+        mult = clean.get("char_time_mult")
+        if mult is not None and not lo <= mult <= hi:
+            errors["char_time_mult"] = f"must lie in [{lo:g}, {hi:g}]"
 
     # Device selection. Checked here so a typo ("gpu1", "cuda:0") is rejected at
     # submission rather than after the solve has been queued -- and so that
     # asking for the GPU on a configuration the port refuses (d_tube != 0, an
     # off-centre seed) is caught before any compute time is spent.
     device = clean.get("device")
-    if device is not None:
+    if device is not None and not modal:
         from launch_functions.launch import DEVICES
 
         norm = str(device).strip().lower()
@@ -389,7 +427,22 @@ def run_selected_computation(computation_name, param_dict):
     }:
 
         if isinstance(result, list) and all(isinstance(p, str) for p in result):
-            return {"output_dirs": [os.path.dirname(p) for p in result]}
+            output = {"output_dirs": [os.path.dirname(p) for p in result]}
+            if computation_name == "Mass Analysis":
+                from launch_functions.launch import MASS_ANALYSIS_ENGINE_DEFAULT
+
+                output["engine"] = str(parsed_inputs.get("engine")
+                                       or MASS_ANALYSIS_ENGINE_DEFAULT).strip().lower()
+                psd = [p for p in result if os.path.basename(p).startswith("MA_psd_y2_")]
+                if psd:
+                    import math
+                    import pandas as pd
+
+                    # NaN (no half-maximum crossing) becomes None, to stay valid JSON
+                    output["psd_y2"] = {
+                        k: v if isinstance(v, str) else (None if math.isnan(float(v)) else float(v))
+                        for k, v in pd.read_csv(psd[0]).iloc[0].items()}
+            return output
         elif isinstance(result, dict):
             # Backward compatibility if returning a dict of lists
             output = {}
@@ -426,13 +479,21 @@ def _char_time_summary(result):
         x = float(x)
         return None if math.isnan(x) else x
 
+    extra = [c for c in ("lambda_1", "lambda_2", "lambda_2_imag",
+                         "psd_omega_peak", "psd_peak", "psd_fwhm")
+             if c in table.columns]
     rows = [{**{k: float(r[k]) for k in keys},
-             "t_star": clean(r["t_star"]), "m_star": clean(r["m_star"])}
+             "t_star": clean(r["t_star"]), "m_star": clean(r["m_star"]),
+             **{c: clean(r[c]) for c in extra},
+             **({"psd_fwhm_side": str(r["psd_fwhm_side"])}
+                if "psd_fwhm_side" in table.columns else {})}
             for _, r in table.iterrows()]
     out = {"output_dirs": [result["output_dir"]], "csv": result["csv"],
            "t_star": rows}
-    if "tau" in table.columns and len(table):
-        out["tau"] = float(table["tau"].iloc[0])
-    if "device" in result:
-        out["device"] = result["device"]
+    for c in ("tau", "char_time_mult"):
+        if c in table.columns and len(table):
+            out[c] = float(table[c].iloc[0])
+    for c in ("device", "engine"):
+        if c in result:
+            out[c] = result[c]
     return out

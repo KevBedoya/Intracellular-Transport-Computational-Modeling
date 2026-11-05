@@ -196,7 +196,8 @@ def _grid_through_launch(T, ckpt_dir, extend_from=None, device="cpu"):
     try:
         r = launch.collect_ab_grid_char_time(
             16, 16, [10.0], [0.1, 1.0], 1.0, T, [0, 4, 8, 12], show_plt=False,
-            workers=1, tau=0.01, device=device, extend_from=extend_from)
+            workers=1, tau=0.01, device=device, extend_from=extend_from,
+            engine="time_stepper")                    # continuation is a time-stepper feature
     finally:
         if old is None:
             os.environ.pop("ITCM_CHECKPOINT_DIR", None)

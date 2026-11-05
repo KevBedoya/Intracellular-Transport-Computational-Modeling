@@ -38,12 +38,28 @@ def char_time_lines(result):
     if not rows:
         return []
     tau = result.get("tau")
+    mult = result.get("char_time_mult") or 1.0
+    engine = result.get("engine")
     lines = [f"Characteristic time (right-sweep |y''| <= tau"
-             + (f", tau = {tau:g}" if tau is not None else "") + "):"]
+             + (f", tau = {tau:g}" if tau is not None else "")
+             + (f", engine = {engine}" if engine else "") + "):"]
+    at = "t*" if mult == 1 else f"{mult:g} t*"
     for r in rows:
         label = ", ".join(f"{k}={r[k]:g}" for k in ("v", "a", "b") if k in r)
+        psd = ""
+        if r.get("psd_peak") is not None:
+            fwhm = "NaN" if r.get("psd_fwhm") is None else f"{r['psd_fwhm']:.6g}"
+            psd = (f"\n        PSD of y'': omega_peak = {r['psd_omega_peak']:.6g}, "
+                   f"peak = {r['psd_peak']:.6g}, FWHM = {fwhm}")
         if r.get("t_star") is None:
-            lines.append(f"    {label}: no t* within T (|y''| still above tau at the end)")
-        else:
-            lines.append(f"    {label}: t* = {r['t_star']:.6f}, m* = M(t*) = {r['m_star']:.6e}")
+            lines.append(f"    {label}: no t* within T (|y''| still above tau at the end)" + psd)
+            continue
+        m = "NaN" if r.get("m_star") is None else f"{r['m_star']:.6e}"
+        line = f"    {label}: t* = {r['t_star']:.6f}, m* = M({at}) = {m}"
+        if r.get("lambda_1") is not None:
+            line += f", lambda_1 = {r['lambda_1']:.6f}"
+        if r.get("lambda_2") is not None:
+            im = r.get("lambda_2_imag") or 0.0
+            line += f", lambda_2 = {r['lambda_2']:.6f}" + (f" +/- {im:.6f}i" if im else "")
+        lines.append(line + psd)
     return lines

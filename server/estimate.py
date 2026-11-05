@@ -37,6 +37,28 @@ _p2, _c2 = float(_CPU_POINTS[1][0] ** 2), _CPU_POINTS[1][1]
 CPU_EXPONENT = math.log(_c2 / _c1) / math.log(_p2 / _p1)
 CPU_COEFF = _c1 / (_p1 ** CPU_EXPONENT)
 
+# --- Modal engine (characteristic time): seconds per point, a power law in
+# patch count through two solo measurements (build + eigensolve + t*, measured
+# 2026-11-04: 0.30 s at 48^2, 0.77 at 64^2, 5.2 at 96^2, 24.4 at 128^2). The
+# dense eigensolve of the symmetry-reduced operator dominates from 64^2 up, and
+# grows faster than the time loop's per-step cost, so the fit is anchored on the
+# two largest grids.
+_MODAL_POINTS = ((96, 5.23), (128, 24.44))
+_m1, _s1 = float(_MODAL_POINTS[0][0] ** 2), _MODAL_POINTS[0][1]
+_m2, _s2 = float(_MODAL_POINTS[1][0] ** 2), _MODAL_POINTS[1][1]
+MODAL_EXPONENT = math.log(_s2 / _s1) / math.log(_m2 / _m1)
+MODAL_COEFF = _s1 / (_m1 ** MODAL_EXPONENT)
+
+# --- Modal engine (Mass Analysis): the eigensolve above, then the modal sum at
+# every one of the K / MA_collection_factor samples, which are then written out
+# as five CSVs and plotted. Measured 2026-11-04 at 64^2 and 96^2, T = 1 and 4:
+# evaluating costs ~4 us/sample over the first unit of time, while the fast
+# modes are still active, and ~1.35 us/sample over the whole record; writing
+# costs ~25 us/sample. Unlike the characteristic time, this grows with T.
+MODAL_EARLY_US_PER_SAMPLE = 4.0
+MODAL_US_PER_SAMPLE = 1.35
+MODAL_OUTPUT_US_PER_SAMPLE = 25.0
+
 # numba compiles the kernels on every fresh process. Irrelevant against a
 # multi-hour solve, but it is most of the runtime at 48^2, where ignoring it
 # made the estimate read 45 s for a job that takes about 4 minutes.
@@ -89,6 +111,51 @@ def ab_grid_lanes(workers, points):
     return max(1, min(points, (os.cpu_count() or 2) - 1))
 
 
+def _modal_seconds(rg, ry, params):
+    """Characteristic time on the modal engine: no time loop, so no K.
+
+    Each point builds the reduced one-step operator and diagonalises it, at a
+    cost that does not depend on T and is fitted, like the CPU model, as a power
+    law in patch count through measured solo points (MODAL_POINTS). Points run
+    one after another in the job's process.
+    """
+    pts = 1
+    v_list = params.get("v_LIST")
+    if isinstance(v_list, (list, tuple)) and v_list:
+        pts = len(v_list)
+    a_list, b_list = params.get("a_list"), params.get("b_list")
+    if (isinstance(a_list, (list, tuple)) and a_list
+            and isinstance(b_list, (list, tuple)) and b_list):
+        pts = len(a_list) * len(b_list)
+    per_point = MODAL_COEFF * (float(rg) * float(ry)) ** MODAL_EXPONENT
+    return pts * per_point * FUDGE + STARTUP_SECONDS
+
+
+def _modal_mass_analysis_seconds(rg, ry, T, params):
+    """Mass Analysis on the modal engine: one eigensolve, then every sample."""
+    factor = float(params.get("MA_collection_factor") or 5)
+    radius, D = float(params.get("domain_radius") or 1.0), float(params.get("D") or 1.0)
+    samples = steps(rg, ry, T, radius, D) / factor
+    early = steps(rg, ry, min(T, 1.0), radius, D) / factor
+    per_point = MODAL_COEFF * (float(rg) * float(ry)) ** MODAL_EXPONENT
+    work = (per_point + 1e-6 * (MODAL_EARLY_US_PER_SAMPLE * early
+                                + (MODAL_US_PER_SAMPLE + MODAL_OUTPUT_US_PER_SAMPLE) * samples))
+    return work * FUDGE + STARTUP_SECONDS
+
+
+def _is_modal(computation, params):
+    """Whether this job runs on the modal engine, given each computation's default."""
+    if not computation:
+        return False
+    if "Characteristic Time" in computation:
+        default = "modal"
+    elif computation == "Mass Analysis":
+        default = "time_stepper"
+    else:
+        return False
+    return str((params or {}).get("engine") or default).strip().lower() == "modal"
+
+
 def us_per_step(rg, ry, device="cpu"):
     patches = float(rg) * float(ry)
     if str(device).lower() in ("gpu", "cuda"):
@@ -122,6 +189,11 @@ def seconds(computation, params, device=None):
     if T <= 0:
         T = 1.0
 
+    if _is_modal(computation, params):
+        if computation == "Mass Analysis":
+            return _modal_mass_analysis_seconds(rg, ry, T, params)
+        return _modal_seconds(rg, ry, params)
+
     K = steps(rg, ry, T,
               float(params.get("domain_radius") or 1.0),
               float(params.get("D") or 1.0))
@@ -153,6 +225,17 @@ def describe(computation, params, device=None):
         return {"seconds": None, "device": None, "basis": None}
     g = _grid(params or {})
     dev = str(device or (params or {}).get("device") or "cpu").lower()
+    if _is_modal(computation, params):
+        basis = {"engine": "modal",
+                 "seconds_per_point": MODAL_COEFF * (g[0] * g[1]) ** MODAL_EXPONENT,
+                 "fudge": FUDGE}
+        if computation == "Mass Analysis":
+            basis["samples"] = steps(g[0], g[1], float(params.get("T_param") or 1.0),
+                                     float(params.get("domain_radius") or 1.0),
+                                     float(params.get("D") or 1.0)) // int(
+                                         params.get("MA_collection_factor") or 5)
+            basis["us_per_sample"] = MODAL_US_PER_SAMPLE + MODAL_OUTPUT_US_PER_SAMPLE
+        return {"seconds": s, "device": "cpu", "requested_device": dev, "basis": basis}
     resolved = "gpu" if dev in ("gpu", "auto", "cuda") else "cpu"
     return {
         "seconds": s,

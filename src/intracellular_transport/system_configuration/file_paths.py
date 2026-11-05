@@ -43,6 +43,7 @@ mass_analysis_advective = general_output / "mass_analysis_results/advective"
 mass_analysis_diffusive = general_output / "mass_analysis_results/diffusive"
 mass_analysis_advective_over_total = general_output / "mass_analysis_results/advective_over_total"
 mass_analysis_total = general_output / "mass_analysis_results/total"
+mass_analysis_psd = general_output / "mass_analysis_results/psd_y2"
 mass_analysis_advective_over_initial = general_output / "mass_analysis_results/advective_over_initial"
 
 # Characteristic time analysis results
