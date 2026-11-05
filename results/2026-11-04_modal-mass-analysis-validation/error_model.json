@@ -1,0 +1,68 @@
+{
+  "L_inf": {
+    "form": "log10 L_inf = c0 + cG log10 G + cT log10 T + ca log10 a + cb log10 b + cv log10 v",
+    "coefficients": {
+      "c0": -17.85112982296263,
+      "cG": 4.443091524314383,
+      "cT": 0.07631268219343434,
+      "ca": 0.04347101998686154,
+      "cb": -0.010199860418250939,
+      "cv": -0.005141466390116554
+    },
+    "r2": 0.9547437533535814,
+    "rms_residual_decades": 0.18491772092190598,
+    "max_residual_decades": 0.5824888145317431,
+    "upper_bound_offset_decades": 0.5824888145317431,
+    "holdout": {
+      "trained_on": "G <= 48 (CPU reference)",
+      "predicted": [
+        {
+          "G": 64,
+          "reference": "cpu",
+          "rms_decades": 0.2166826042418435,
+          "max_under_prediction_decades": 0.08217315159499883
+        },
+        {
+          "G": 96,
+          "reference": "gpu-stored",
+          "rms_decades": 0.1691714146375835,
+          "max_under_prediction_decades": 0.0994671006968435
+        }
+      ]
+    },
+    "n_runs": 272
+  },
+  "L_2": {
+    "form": "log10 L_2 = c0 + cG log10 G + cT log10 T + ca log10 a + cb log10 b + cv log10 v",
+    "coefficients": {
+      "c0": -18.10244873403766,
+      "cG": 4.448198348745916,
+      "cT": 0.3017251836040904,
+      "ca": 0.08115954120715085,
+      "cb": -0.022107960296434914,
+      "cv": -0.0047753041992173095
+    },
+    "r2": 0.9398459847255333,
+    "rms_residual_decades": 0.2171377881105044,
+    "max_residual_decades": 0.8449084163789387,
+    "upper_bound_offset_decades": 0.8449084163789387,
+    "holdout": {
+      "trained_on": "G <= 48 (CPU reference)",
+      "predicted": [
+        {
+          "G": 64,
+          "reference": "cpu",
+          "rms_decades": 0.253223775044184,
+          "max_under_prediction_decades": 0.11009958216232363
+        },
+        {
+          "G": 96,
+          "reference": "gpu-stored",
+          "rms_decades": 0.17813937127776053,
+          "max_under_prediction_decades": 0.15674038601981088
+        }
+      ]
+    },
+    "n_runs": 272
+  }
+}
