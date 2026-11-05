@@ -37,6 +37,12 @@ Every figure is a 4x4 grid in the 10-07 layout: rows are a, columns are b, one p
 | `summary_96x96_modal.csv` | per pair: t*, m* = M(t*), M(10 t*) (`m_at_10_t_star`, from the modal series, since 10 t* is past T = 4 for every pair), the central-difference-rule t*, lambda_1, lambda_2, the PSD peak and FWHM, and max \|exact − central difference\| for t > 0.05 |
 | `t_star_m_10t_star_96x96_modal.pdf` | table of t*, 10 t* and M(10 t*) per (a, b) (`scripts/table_pdf.py`) |
 | `heatmap_m_5t_star_96x96_modal.png`, `.pdf` | heatmap of M(5 t*) over (a, b), rows a, columns b, colour log10 M(5 t*). Each cell shows M(5 t*) and 5 t* (`scripts/heatmap_m_5t_star.py`) |
+| `heatmap_m_t_tilde_5_over_re_lambda2_96x96_modal.png`, `.pdf` | the same layout for M(t~), t~ = 5/Re(lambda_2) (`scripts/heatmap_m_t_tilde.py`) |
+| `heatmap_m_t_tilde_5_over_abs_lambda2_96x96_modal.png`, `.pdf` | the same for t~ = 5/\|lambda_2\|. For b = 100 lambda_2 is real, so these cells match the Re(lambda_2) figure |
+| `heatmap_m_t_tilde_1_over_abs_lambda2_96x96_modal.png`, `.pdf` | the same for t~ = 1/\|lambda_2\|. Here M(t~) only spans 0.74–1.00, so the colour is M itself on a linear scale, not log10 M |
+| `heatmap_lambda_1_96x96_modal.png`, `.pdf` | lambda_1 (the slowest decay rate of M) over (a, b), from the char-time job (`scripts/heatmap_lambda.py`) |
+| `heatmap_lambda_2_96x96_modal.png`, `.pdf` | lambda_2 over (a, b), coloured by Re(lambda_2). Each cell shows Re ± i\|Im\| and \|lambda_2\|; it is real for b = 100 |
+| `m_t_tilde_96x96_modal.csv` | per pair: Re and \|Im\| of lambda_2 (from the summary), \|lambda_2\|, the three t~ and M at each, and lambda_2 recomputed from the local solve (agrees to ≤ 6e-9) |
 | `m_5t_star_96x96_modal.csv` | per pair: t*, 5 t*, M(5 t*), and M at t* and 10 t* recomputed against the summary's m* and M(10 t*) (agree to ≤ 1.2e-7 relative; see Notes) |
 | `scripts/` | submit, wait and figure scripts, plus the job ids |
 

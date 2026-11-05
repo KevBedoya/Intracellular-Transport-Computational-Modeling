@@ -65,24 +65,28 @@ def sci(x):
     return rf"${m}\times10^{{{int(e)}}}$"
 
 
-def plot(d):
-    d = d.set_index(["a", "b"])
-    z = np.array([[np.log10(d.loc[(a, b), "m_at_5_t_star"]) for b in AB] for a in AB])
-    # sequential blue ramp, light (small M) -> dark (large M)
-    cmap = LinearSegmentedColormap.from_list(
-        "blue", ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"])
-    lo, hi = np.floor(z.min()), np.ceil(z.max())
+HEAD = r"96x96, v = 1, N = 4 evenly spaced, $\tau$ = 0.01, modal engine;  "
+# sequential blue ramp, light (small) -> dark (large)
+CMAP = LinearSegmentedColormap.from_list(
+    "blue", ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"])
 
+
+def grid(z, cells, lo, hi, cbar_label, title, stem):
+    """A 4x4 (a, b) heatmap: rows a, columns b, colour z (4x4) on [lo, hi].
+
+    ``cells[i][j]`` = (main, sub): the bold line and the smaller one under it
+    (sub may be "", and main is then centred). Writes OUT/<stem>.png and .pdf.
+    """
     fig, ax = plt.subplots(figsize=(9.2, 7.6))
-    im = ax.imshow(z, cmap=cmap, vmin=lo, vmax=hi, aspect="equal")
-    for (i, a) in enumerate(AB):
-        for (j, b) in enumerate(AB):
-            r = d.loc[(a, b)]
+    im = ax.imshow(z, cmap=CMAP, vmin=lo, vmax=hi, aspect="equal")
+    for i in range(4):
+        for j in range(4):
+            main, sub = cells[i][j]
             ink = "white" if (z[i, j] - lo) / (hi - lo) > 0.5 else "#1a1a1a"
-            ax.text(j, i - 0.13, sci(r.m_at_5_t_star), ha="center", va="center",
+            ax.text(j, i - 0.13 if sub else i, main, ha="center", va="center",
                     color=ink, fontsize=11.5, fontweight="bold")
-            ax.text(j, i + 0.2, rf"$5t^*$ = {r.five_t_star:.4f}", ha="center", va="center",
-                    color=ink, fontsize=9.5)
+            if sub:
+                ax.text(j, i + 0.2, sub, ha="center", va="center", color=ink, fontsize=9.5)
     # 2px surface gap between cells
     ax.set_xticks(np.arange(-0.5, 4, 1), minor=True)
     ax.set_yticks(np.arange(-0.5, 4, 1), minor=True)
@@ -95,15 +99,40 @@ def plot(d):
     for sp in ax.spines.values():
         sp.set_visible(False)
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
-    cb.set_label(r"$\log_{10} M(5t^*)$")
+    cb.set_label(cbar_label)
     cb.outline.set_visible(False)
-    ax.set_title(r"$M(5t^*)$ per $(a, b)$, with $5t^*$ in each cell" + "\n"
-                 r"96x96, v = 1, N = 4 evenly spaced, $\tau$ = 0.01, modal engine;  "
-                 r"$t^*$ from the exact modal $y''$, $M$ from the spectral (eigen-modal) series", fontsize=11)
+    ax.set_title(title, fontsize=11)
     fig.tight_layout()
     for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT, f"heatmap_m_5t_star_96x96_modal.{ext}"), dpi=150)
+        fig.savefig(os.path.join(OUT, f"{stem}.{ext}"), dpi=150)
     plt.close(fig)
+
+
+def heatmap(d, m_col, t_col, t_tex, subtitle, stem, t_def="", log=True):
+    """M at a per-pair time over the 4x4 (a, b) grid, colour log10 M.
+
+    Each cell shows M (column ``m_col``) and the time (``t_col``, typeset as ``t_tex``).
+    ``t_def`` (e.g. the time's definition) follows the first title line.
+    ``log=False`` colours by M itself, on the data range rounded out to 0.05 -- for
+    M that spans well under a decade, where whole-decade log limits leave every cell
+    the same shade. Writes OUT/<stem>.png and .pdf.
+    """
+    d = d.set_index(["a", "b"])
+    m = np.array([[d.loc[(a, b), m_col] for b in AB] for a in AB])
+    t = np.array([[d.loc[(a, b), t_col] for b in AB] for a in AB])
+    z = np.log10(m) if log else m
+    step = 1.0 if log else 0.05
+    lo, hi = np.floor(z.min() / step) * step, np.ceil(z.max() / step) * step
+    cells = [[(sci(m[i, j]), rf"${t_tex}$ = {t[i, j]:.4f}") for j in range(4)] for i in range(4)]
+    grid(z, cells, lo, hi, rf"$\log_{{10}} M({t_tex})$" if log else rf"$M({t_tex})$",
+         rf"$M({t_tex})$ per $(a, b)$, with ${t_tex}$ in each cell" + (t_def and ";  " + t_def)
+         + "\n" + HEAD + subtitle, stem)
+
+
+def plot(d):
+    heatmap(d, "m_at_5_t_star", "five_t_star", r"5t^*",
+            r"$t^*$ from the exact modal $y''$, $M$ from the spectral (eigen-modal) series",
+            "heatmap_m_5t_star_96x96_modal")
 
 
 if __name__ == "__main__":
