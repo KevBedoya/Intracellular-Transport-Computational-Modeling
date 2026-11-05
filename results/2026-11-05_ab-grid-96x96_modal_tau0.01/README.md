@@ -36,6 +36,8 @@ Every figure is a 4x4 grid in the 10-07 layout: rows are a, columns are b, one p
 | `psd_y2.png` | \|F[y'']\|² on linear axes, each panel zoomed on its peak: red = peak, shaded = FWHM, dashed = left half-maximum crossing |
 | `summary_96x96_modal.csv` | per pair: t*, m* = M(t*), M(10 t*) (`m_at_10_t_star`, from the modal series, since 10 t* is past T = 4 for every pair), the central-difference-rule t*, lambda_1, lambda_2, the PSD peak and FWHM, and max \|exact − central difference\| for t > 0.05 |
 | `t_star_m_10t_star_96x96_modal.pdf` | table of t*, 10 t* and M(10 t*) per (a, b) (`scripts/table_pdf.py`) |
+| `heatmap_m_5t_star_96x96_modal.png`, `.pdf` | heatmap of M(5 t*) over (a, b), rows a, columns b, colour log10 M(5 t*). Each cell shows M(5 t*) and 5 t* (`scripts/heatmap_m_5t_star.py`) |
+| `m_5t_star_96x96_modal.csv` | per pair: t*, 5 t*, M(5 t*), and M at t* and 10 t* recomputed against the summary's m* and M(10 t*) (agree to ≤ 1.2e-7 relative; see Notes) |
 | `scripts/` | submit, wait and figure scripts, plus the job ids |
 
 ## Agreement with the 10-07 time-stepper
@@ -54,3 +56,4 @@ This agreement is closer than in the a = b = 100, tau = 1e-3 grid-convergence co
 - **Where t\* comes from.** t* in this directory is taken from the exact modal y'' (char-time job).
 - **The 10-07 rule on these samples.** `central_difference_t_star` applies the 10-07 right-sweep rule to the sampled M. It agrees with the modal t* to about 1e-4 everywhere except (0.1, 1), where it gives 1.5469 against 1.5452. There y'' approaches −tau almost tangentially (its minimum is about −0.011), so the noise shifts the crossing.
 - **FWHM.** It is 2(omega_peak − omega_left). For pairs whose PSD stays above half-maximum down to omega = 0, it is read on the mirrored side (`psd_fwhm_side = mirrored`). The PSD peaks at omega = 0 for (0.1, 10), (1, 10) and all four b = 100 pairs; (10, 10) and (100, 10) peak at 5.3 and 11.4.
+- **M(5 t\*).** It comes from the spectral (eigen-modal) expansion of the 96x96 one-step operator (`mass_analysis_modal.solve_modes`, `ln_mass`), re-solved locally for each pair. 5 t\* runs from 2.03 to 17.17. It is past T = 4 for every pair except (0.1, 10), (0.1, 100), (1, 10), (1, 100), (10, 100), (100, 10) and (100, 100). The local re-solve reproduces the summary's m\* and M(10 t\*) to 1e-12–1.2e-7 relative, against 3e-15 on the original machine. The difference comes from a different LAPACK under cond(V) ~ 1e8. The largest gap is (100, 0.1).
