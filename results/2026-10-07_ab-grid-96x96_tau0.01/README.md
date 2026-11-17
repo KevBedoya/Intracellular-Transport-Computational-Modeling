@@ -91,6 +91,20 @@ difference above, and the second derivative of a Chebyshev fit of ln M on
   and each panel
 - `..._peak_zoom.png` — the same spectra, ±8 bins (Δω = 2π/T) about the peak,
   both axes linear
+- `psd_central_difference_96x96_full_linear.png`, `_semilogy.png`,
+  `_semilogx.png` — the central-difference full-range figure on linear-linear,
+  linear ω / log |F|², and log ω / linear |F|² axes; ω = 0 is drawn wherever ω
+  is linear, the red line is the same k ≥ 1 peak, and each panel also gives
+  |F|²(0). `psd_central_difference_96x96_w100_linear.png`, `_semilogy.png`,
+  `_semilogx.png` — the same three cut at ω = 100, with the bins marked. From
+  the saved `psd_96x96.npz` by `scripts/psd_linear_96.py`
+- `psd_d2_lnM_96x96_a10_b0.1.png` — (10, 0.1) alone: its `_w100_linear` panel
+  above y″ and ln M (t* in red), by `scripts/pair_psd_d2_lnM_96.py [a b]`, with
+  the peak's half maximum dashed and its width marked: |F|² = 24.636 (half of
+  49.271) at ω = 3.911 and 13.942, FWHM = 10.031 (linear between bins). The
+  y″ and ln M series aren't saved here, so the script reads the pair's
+  `timeseries_4.dat` (see Reproducing) and checks that it gives back the spectrum
+  in `psd_96x96.npz`
 - `psd_peaks_96x96.csv` — ω_peak per pair and method; `psd_96x96.npz` (ω and
   both spectra per pair), `psd_summary_96x96.csv` (Chebyshev degree and
   residual, and how far its y″ is from the central difference)
@@ -100,6 +114,20 @@ monotonically (b ≥ 10 except a = 100, and (100, 100)) the peak is just the
 first plotted bin, 2π/T.
 
 `scripts/psd_96.py [t1_dir]`.
+
+## `eigen_t_star_96x96_tau0.01.pdf` — λ1, λ2 and t* from the one-step matrix
+
+The eigen-predicted t* note (pages 1–4), plus Appendix A (pages 5–8), which
+writes out the semi-discrete operator L = (P − I)/Δt: the stencil of each row,
+the whole 15 × 15 matrix for rg = 3, ry = 4 with two tubes, and the nonzero
+pattern of the 9,505 × 9,505 L at 96 × 96. Built from the stencil alone, L has
+the same pattern as the L extracted from the solver, and the same entries to
+within a relative 3e-11, for all sixteen pairs. The four rim tube cells, which
+the solver never updates, are the only entries of L that depend on Δt
+(−1/Δt). `scripts/eigen_appendix_L.py` writes `eigen_appendix/` (the
+appendix source `appendix_L.tex`, its generated matrix, table and figure,
+and `L_check.txt`), compiles the appendix with tectonic and splices it after
+the note's first four pages.
 
 ## Reproducing
 

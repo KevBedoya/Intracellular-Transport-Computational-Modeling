@@ -1,0 +1,22 @@
+example rg = 3, ry = 4, tubes [0, 2], (a, b, v) = (10.0, 0.1, 1.0): n = 15, dT = 5.555556e-03
+  pattern equal: True, max |dL| / max |L| = 7.89e-17, max entrywise |dL| / |L| = 1.58e-15
+96x96 (a, b) = (0.1, 0.1): pattern equal True, max |dL| / max |L| = 1.20e-16, max entrywise |dL| / |L| = 2.94e-11
+96x96 (a, b) = (0.1, 1): pattern equal True, max |dL| / max |L| = 1.20e-16, max entrywise |dL| / |L| = 1.77e-11
+96x96 (a, b) = (0.1, 10): pattern equal True, max |dL| / max |L| = 1.20e-16, max entrywise |dL| / |L| = 1.90e-12
+96x96 (a, b) = (0.1, 100): pattern equal True, max |dL| / max |L| = 1.20e-16, max entrywise |dL| / |L| = 3.16e-12
+96x96 (a, b) = (1, 0.1): pattern equal True, max |dL| / max |L| = 9.54e-17, max entrywise |dL| / |L| = 2.94e-11
+96x96 (a, b) = (1, 1): pattern equal True, max |dL| / max |L| = 9.54e-17, max entrywise |dL| / |L| = 1.77e-11
+96x96 (a, b) = (1, 10): pattern equal True, max |dL| / max |L| = 9.54e-17, max entrywise |dL| / |L| = 1.90e-12
+96x96 (a, b) = (1, 100): pattern equal True, max |dL| / max |L| = 9.54e-17, max entrywise |dL| / |L| = 3.16e-12
+96x96 (a, b) = (10, 0.1): pattern equal True, max |dL| / max |L| = 1.22e-16, max entrywise |dL| / |L| = 2.94e-11
+96x96 (a, b) = (10, 1): pattern equal True, max |dL| / max |L| = 1.22e-16, max entrywise |dL| / |L| = 1.77e-11
+96x96 (a, b) = (10, 10): pattern equal True, max |dL| / max |L| = 1.22e-16, max entrywise |dL| / |L| = 1.90e-12
+96x96 (a, b) = (10, 100): pattern equal True, max |dL| / max |L| = 1.22e-16, max entrywise |dL| / |L| = 3.16e-12
+96x96 (a, b) = (100, 0.1): pattern equal True, max |dL| / max |L| = 1.41e-16, max entrywise |dL| / |L| = 2.94e-11
+96x96 (a, b) = (100, 1): pattern equal True, max |dL| / max |L| = 1.41e-16, max entrywise |dL| / |L| = 1.77e-11
+96x96 (a, b) = (100, 10): pattern equal True, max |dL| / max |L| = 1.41e-16, max entrywise |dL| / |L| = 1.90e-12
+96x96 (a, b) = (100, 100): pattern equal True, max |dL| / max |L| = 1.41e-16, max entrywise |dL| / |L| = 3.16e-12
+96x96 worst over the 16 pairs: max |dL| / max |L| = 1.41e-16, entrywise 2.94e-11
+96x96 L at (a, b) = (1, 1): nnz = 47129, n = 9505, mean per column = 4.958
+  per-column counts: 2: 4, 3: 380, 4: 92, 5: 8652, 6: 376, 97: 1
+  centre column 97, centre row 101
