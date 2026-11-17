@@ -35,7 +35,7 @@ Every figure is a 4x4 grid in the 10-07 layout: rows are a, columns are b, one p
 | `lnM.png`, `lnM_t_star.png` | ln M(t), and the same with t* marked |
 | `psd_y2.png` | \|F[y'']\|² on linear axes, each panel zoomed on its peak: red = peak, shaded = FWHM, dashed = left half-maximum crossing |
 | `summary_96x96_modal.csv` | per pair: t*, m* = M(t*), M(10 t*) (`m_at_10_t_star`, from the modal series, since 10 t* is past T = 4 for every pair), the central-difference-rule t*, lambda_1, lambda_2, the PSD peak and FWHM, and max \|exact − central difference\| for t > 0.05 |
-| `t_star_m_10t_star_96x96_modal.pdf` | table of t*, 10 t* and M(10 t*) per (a, b) (`scripts/table_pdf.py`) |
+| `t_star_m_10t_star_96x96_modal.pdf` | table of t*, 5 t* and M(5 t*) per (a, b) (`scripts/table_pdf.py`) |
 | `heatmap_m_5t_star_96x96_modal.png`, `.pdf` | heatmap of M(5 t*) over (a, b), rows a, columns b, colour log10 M(5 t*). Each cell shows M(5 t*) and 5 t* (`scripts/heatmap_m_5t_star.py`) |
 | `heatmap_m_t_tilde_5_over_re_lambda2_96x96_modal.png`, `.pdf` | the same layout for M(t~), t~ = 5/Re(lambda_2) (`scripts/heatmap_m_t_tilde.py`) |
 | `heatmap_m_t_tilde_5_over_abs_lambda2_96x96_modal.png`, `.pdf` | the same for t~ = 5/\|lambda_2\|. For b = 100 lambda_2 is real, so these cells match the Re(lambda_2) figure |

@@ -68,7 +68,7 @@ Every figure is a 4x4 grid in the 10-07 layout: rows are a, columns are b, one p
 | `lnM.png`, `lnM_t_star.png` | ln M(t), and the same with t* marked |
 | `psd_y2.png` | \|F[y'']\|² on linear axes, each panel zoomed on its peak: red = peak, shaded = FWHM, dashed = left half-maximum crossing |
 | `summary_96x96_v1000.csv` | per pair: t*, m*, M(t*) by powers, 10 t*, M(10 t*), the 10-07-rule t*, lambda_1, lambda_2, \|Im lambda_2\|, their condition numbers, fit_slope, the PSD peak and FWHM, max \|reference − central difference\| for t > 0.05, and M(T) |
-| `t_star_m_10t_star_96x96_v1000.pdf` | table of t*, 10 t* and M(10 t*) per (a, b) |
+| `t_star_m_10t_star_96x96_v1000.pdf` | table of t*, 5 t* and M(5 t*) per (a, b) |
 | `heatmap_m_5t_star_96x96_v1000.png`, `.pdf` | M(5 t*) over (a, b), with 5 t* in each cell |
 | `m_5t_star_96x96_v1000.csv` | per pair: t*, 5 t*, M(5 t*) |
 | `heatmap_m_t_tilde_5_over_re_lambda2_96x96_v1000.png`, `.pdf` | M(t~), t~ = 5/Re(lambda_2) |
